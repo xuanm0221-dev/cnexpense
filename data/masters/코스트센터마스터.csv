@@ -1,0 +1,157 @@
+﻿사업영역,본사/매장,사업부,코스트 센터,코스트센터명,부서명,영업/직접
+1000,본사,경영지원,CNF00010,Executives,MGT,영업
+1000,본사,경영지원,CNF00020,MANAGEMENT,MGT,영업
+1000,본사,경영지원,CNF00030,FINANACE,재무,영업
+1000,본사,경영지원,CNF00040,HR,인사,영업
+1000,본사,경영지원,CNF00050,ADMIN,총무,영업
+1000,본사,경영지원,CNF00060,LEGAL,법무,영업
+1000,본사,경영지원,CNF00070,IT,IT,영업
+1000,본사,경영지원,CNF00085,PROCUREMENT,구매,영업
+1000,본사,MLB,CNF00105,MARKETING,마케팅,영업
+1000,본사,경영지원,CNF00115,Strategic Planning,Business Plan,영업
+1000,본사,경영지원,CNF00125,BD,Business Development,영업
+1000,본사,경영지원,CNF00135,PI,Process Inovation,영업
+1000,본사,경영지원,CNF00145,Client Service,Client Service,영업
+1000,본사,MLB,CNF00155,E-Commerce,온라인,영업
+1000,본사,경영지원,CNF00180,Supply Chain,Supply Chain,영업
+1000,본사,MLB,CNF00190,MP,MP(상품기획),영업
+1000,본사,경영지원,CNF00200,Business Operation,Business Operation,영업
+1000,플랫폼,MLB,CNZ80000,MLB微商城,매장,직접
+1000,매장,MLB,CNZ80001,MM 上海 兴业太古汇,매장,직접
+1000,매장,MLB,CNZ80003,ML 上海 万科,매장,직접
+1000,매장,MLB,CNZ80004,MM 上海 迪士尼,매장,직접
+1000,매장,MLB,CNZ80005,ML 上海 世纪汇,매장,직접
+1000,매장,MLB,CNZ80006,ML 上海 月星环球港,매장,직접
+1000,매장,MLB,CNZ80007,MM 上海 环贸IAPM,매장,직접
+1000,매장,MLB,CNZ80008,ML 上海 美罗城,매장,직접
+1000,매장,MLB,CNZ80009,ML 上海 佛罗伦萨奥莱 FO,매장,직접
+1000,매장,MLB,CNZ80010,ML 天津 佛罗伦萨奥莱 FO,매장,직접
+1000,매장,MLB,CNZ80011,ML 宁波 杉井奥莱(AL) FO,매장,직접
+1000,매장,MLB,CNZ80017,ML 上海 金桥国际,매장,직접
+1000,매장,MLB,CNZ80024,ML 重庆 砂之船奥莱 FO,매장,직접
+1000,매장,MLB,CNZ80027,ML 徐州 杉杉奥莱(AL) FO,매장,직접
+1000,매장,MLB,CNZ80028,ML 上海 杨浦时尚国际奥莱 FO,매장,직접
+1000,매장,MLB,CNZ80029,ML 上海 飞洲国际 FO,매장,직접
+1000,매장,MLB,CNZ80030,MM 上海 万科天空之城,매장,직접
+1000,매장,MLB,CNZ80031,ML 上海 佛罗伦萨小镇奥莱二店 FO,매장,직접
+1000,매장,MLB,CNZM0005,MM 上海 港汇恒隆广场,매장,직접
+1000,매장,MLB,CNZM0006,MM 上海 置汇旭辉,매장,직접
+1000,매장,MLB,CNZM0007,ML 上海 凯德晶萃LUONE,매장,직접
+1000,매장,MLB,CNZM0008,MM 上海 悦荟广场MLB旗舰店,매장,직접
+1000,매장,MLB,CNZM0009,ML 上海 百盛优客奥莱 FO,매장,직접
+1000,플랫폼,MLB,CNZM0011,MM 唯品会JITX FO,매장,직접
+1000,매장,MLB,CNZM0013,ML 上海 中山公园龙之梦,매장,직접
+1000,플랫폼,MLB,CNZM0033,MM 天猫服装店,매장,직접
+1000,매장,MLB,CNZM0034,ML 上海 青浦百联奥莱 FO,매장,직접
+1000,매장,MLB,CNZM0037,ML 上海 宝山万达,매장,직접
+1000,플랫폼,MLB,CNZM0038,ML 抖音鞋服旗舰店,매장,직접
+1000,매장,MLB,CNZM0039,ML 上海 荟聚,매장,직접
+1000,플랫폼,MLB,CNZM0043,ML 抖音服装旗舰店,매장,직접
+2100,본사,MLB,CNFM0013,MLB_WHOLE SALES,Wholesale,영업
+2100,본사,MLB,CNFM0016,MLB_WHOLE SALES_北区,Wholesale,영업
+2100,본사,MLB,CNFM0025,MLB_OWN RETAIL,리테일,영업
+2100,본사,MLB,CNFM0035,MLB_VMD,VMD,영업
+2100,본사,MLB,CNFM0045,MLB_CMD,MD,영업
+2100,본사,MLB,CNFM0055,MLB_BMD,MD,영업
+2100,본사,MLB,CNFM0085,MLB_MARKETING,마케팅,영업
+2100,본사,MLB,CNFM0095,MLB_INTERIOR,인테리어,영업
+2100,본사,MLB,CNFM0100,MLB_FR_STORE,영업(대리상오프),영업
+2100,본사,MLB,CNFM0110,MLB_OR_STORE,영업(직영오프),영업
+2100,본사,MLB,CNFM0120,MLB_ECFR_STORE,영업(대리상온),영업
+2100,본사,MLB,CNFM0130,MLB_ECOR_STORE,영업(직영오온),영업
+2100,본사,MLB,CNFM0170,MLB_MO,유통MD,영업
+2100,플랫폼,MLB,CNZM0001,MM 天猫旗舰店,매장,직접
+2100,플랫폼,MLB,CNZM0002,ML 淘宝奥莱 FO,매장,직접
+2100,매장,MLB,CNZM0015,ML 上海 首位奥莱 FO,매장,직접
+2100,매장,MLB,CNZM0017,ML 上海 比斯特奥莱 FO,매장,직접
+2100,플랫폼,MLB,CNZM0018,MM 天猫服配,매장,직접
+2100,매장,MLB,CNZM0020,ML 天津 杉杉奥莱(AL) FO,매장,직접
+2100,매장,MLB,CNZM0029,ML 上海 大华奥特莱斯 FO,매장,직접
+2100,플랫폼,MLB,CNZM0035,MM 京东服饰,매장,직접
+2100,플랫폼,MLB,CNZM0036,MM 京东旗舰店,매장,직접
+2100,매장,MLB,CNZM0041,ML 上海 汇金南站 POP,매장,직접
+2100,매장,MLB,CNZM0042,ML 上海 百联又一城,매장,직접
+2100,매장,MLB,CNZM0044,ML 上海 世博天地,매장,직접
+2100,매장,MLB,CNZM0045,ML 上海 南京路 世茂,매장,직접
+2110,본사,MLB KIDS,CNFI0013,MLB KIDS_WHOLE SALES,Wholesale,영업
+2110,본사,MLB KIDS,CNFI0015,KIDS_WHOLE SALES_南区,Wholesale,영업
+2110,본사,MLB KIDS,CNFI0020,MLB KIDS_OWN RETAIL,리테일,영업
+2110,본사,MLB KIDS,CNFI0035,MLB KIDS_VMD,VMD,영업
+2110,본사,MLB KIDS,CNFI0055,MLB KIDS_BMD,MD,영업
+2110,본사,MLB KIDS,CNFI0080,MLB KIDS_MARKETING,마케팅,영업
+2110,본사,MLB KIDS,CNFI0090,MLB KIDS_INTERIOR,인테리어,영업
+2110,본사,MLB KIDS,CNFI0100,MLB KIDS_FR_STORE,영업(대리상오프),영업
+2110,본사,MLB KIDS,CNFI0110,MLB KIDS_OR_STORE,영업(직영오프),영업
+2110,본사,MLB KIDS,CNFI0120,MLB KIDS_ECFR_STORE,영업(대리상온),영업
+2110,본사,MLB KIDS,CNFI0130,MLB KIDS_ECOR_STORE,영업(직영오온),영업
+2110,본사,MLB KIDS,CNFI0160,MLB KIDS_INTERIOR,온라인,영업
+2110,본사,MLB KIDS,CNFI0170,MLB KIDS_INTERIOR,인테리어,영업
+2110,매장,MLB KIDS,CNZI0000,MK 上海 久光,매장,직접
+2110,매장,MLB KIDS,CNZI0001,MK 上海 第一八佰伴,매장,직접
+2110,매장,MLB KIDS,CNZI0002,MK 上海 世纪汇,매장,직접
+2110,매장,MLB,CNZI0003,MM 上海 迪士尼KIDS,매장,직접
+2110,매장,MLB KIDS,CNZI0004,MK 上海 环球港,매장,직접
+2110,플랫폼,MLB KIDS,CNZI0005,MK 天猫旗舰店,매장,직접
+2110,매장,MLB KIDS,CNZI0007,MK 上海 金桥国际,매장,직접
+2110,매장,MLB KIDS,CNZI0008,MK 上海 万科,매장,직접
+2110,매장,MLB KIDS,CNZI0009,MK 上海 万象城,매장,직접
+2110,매장,MLB KIDS,CNZI0013,MK 天津 佛罗伦萨奥莱 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0014,MK 上海 上海南方商城,매장,직접
+2110,매장,MLB KIDS,CNZI0015,MK 上海 南翔印象城,매장,직접
+2110,매장,MLB KIDS,CNZI0016,MK 上海 百盛优客 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0017,MK 天津 佛罗伦萨奥莱 POP,매장,직접
+2110,매장,MLB KIDS,CNZI0019,MK 上海 杨浦时尚国际奥莱 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0021,MK 上海 佛罗伦萨奥莱 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0022,MK 长沙 百联奥莱 FO,매장,직접
+2110,플랫폼,MLB KIDS,CNZI0023,MK 唯品会JITX FO,매장,직접
+2110,플랫폼,MLB KIDS,CNZI0026,MK 京东旗舰店,매장,직접
+2110,매장,MLB KIDS,CNZI0027,MK 上海 置汇旭辉,매장,직접
+2110,매장,MLB KIDS,CNZI0028,MK 上海 大上海时代广场 POP,매장,직접
+2110,매장,MLB KIDS,CNZI0029,MK 上海 松江印象城,매장,직접
+2110,매장,MLB KIDS,CNZI0030,MK 上海 港汇恒隆广场,매장,직접
+2110,매장,MLB KIDS,CNZI0031,MK 上海 宜家荟聚,매장,직접
+2110,매장,MLB KIDS,CNZI0032,MK 宁波 杉井奥特莱斯 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0033,MK 徐州 杉杉奥特莱斯 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0034,MK 上海 青浦百联奥莱 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0035,MK 上海 环球港 POP,매장,직접
+2110,매장,MLB KIDS,CNZI0036,MK 天津 海信广场,매장,직접
+2110,매장,MLB KIDS,CNZI0037,MK 上海 环宇城 POP,매장,직접
+2200,본사,Discovery,CNFX0020,Discovery_MD,MD,영업
+2200,본사,Discovery,CNFX0030,Discovery_Sales,리테일,영업
+2200,본사,Discovery,CNFX0040,Discovery_MARKETING,마케팅,영업
+2200,본사,Discovery,CNFX0050,Discovery_INTERIOR,인테리어,영업
+2200,본사,Discovery,CNFX0060,Discovery_VMD,VMD,영업
+2200,본사,Discovery,CNFX0070,Discovery_EC,온라인,영업
+2200,본사,Discovery,CNFX0080,Discovery_MO,MO,영업
+2200,매장,Discovery,CNZX0001,DX_OR_STORE,매장,직접
+2200,매장,Discovery,CNZX0002,DX_EC OR_STORE,매장,직접
+2200,매장,Discovery,CNZX0003,DX_FR_STORE,매장,직접
+2200,플랫폼,Discovery,CNZX0005,DX 天猫旗舰店,매장,직접
+2200,매장,Discovery,CNZX0006,DX 上海 万象城,매장,직접
+2200,매장,Discovery,CNZX0007,DX 上海 环球港,매장,직접
+2400,본사,Duvetica,CNFV0040,DUVETICA_MARKETING,마케팅,영업
+2400,본사,Duvetica,CNFV0050,DUVETICA_INTERIOR,인테리어,영업
+2400,본사,Duvetica,CNFV0060,DUVETICA_VMD,VMD,영업
+2400,플랫폼,Duvetica,CNZV0001,DV 天猫旗舰店,매장,직접
+2400,매장,Duvetica,CNZV0002,DV 上海 浦东嘉里城,매장,직접
+2400,매장,Duvetica,CNZV0003,DV_OR_STORE,매장,직접
+2400,매장,Duvetica,CNZV0004,DV_FR_STORE,매장,직접
+2400,매장,Duvetica,CNZV0005,DV 上海 环球港,매장,직접
+2400,매장,Duvetica,CNZV0006,DV 上海 港汇恒隆广场,매장,직접
+2400,매장,Duvetica,CNZV0008,DV 成都 杉杉奥莱 FO,매장,직접
+2400,매장,Duvetica,CNZV0009,DV 上海 青浦百联奥莱 POP,매장,직접
+2400,매장,Duvetica,CNZV0010,DV 哈尔滨 枫叶小镇奥莱 FO,매장,직접
+2400,매장,Duvetica,CNZV0011,DV 上海 佛罗伦萨 POP,매장,직접
+2500,본사,SUPRA,CNFS0020,SUPRA_MD,마케팅,영업
+2500,본사,SUPRA,CNFS0030,SUPRA_Sales,Wholesale,영업
+2500,본사,SUPRA,CNFS0040,SUPRA_MARKETING,MD,영업
+2500,본사,SUPRA,CNFS0060,SUPRA_VMD,VMD,영업
+2500,플랫폼,SUPRA,CNZS0001,SP 天猫旗舰店,매장,직접
+2500,매장,SUPRA,CNZS0002,SP 上海 新天地,매장,직접
+2500,매장,SUPRA,CNZS0003,SP_OR_STORE,매장,직접
+2500,매장,SUPRA,CNZS0004,SP_FR_STORE,매장,직접
+2500,매장,SUPRA,CNZS0005,SP 上海 世茂广场,매장,직접
+2500,매장,SUPRA,CNZS0007,SP 上海 五角场万达,매장,직접
+2500,매장,SUPRA,CNZS0008,SP 上海 宝山万达,매장,직접
+2500,매장,SUPRA,CNZS0009,SP 上海 环球港,매장,직접
+2500,매장,SUPRA,CNZS0010,SP 上海 龙之梦中山公园店,매장,직접
