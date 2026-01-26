@@ -15,9 +15,13 @@ from pathlib import Path
 # 경로 설정
 BASE_DIR = Path(__file__).parent.parent
 COST_FILES_DIR = BASE_DIR.parent / "비용파일"  # 상위 폴더의 비용파일 참조
+HEADCOUNT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/사무실인원수")
+HEADCOUNT_STORE_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/매장인원수")
 MASTERS_DIR = BASE_DIR / "data" / "masters"
 OUTPUT_DIR = BASE_DIR / "data" / "processed"
 OUTPUT_FILE = OUTPUT_DIR / "aggregated-costs.json"
+HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "headcount.json"
+STORE_HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "store-headcount.json"
 
 # 분석 대상 사업부 (마스터 파일과 정확히 일치해야 함)
 TARGET_BUSINESS_UNITS = ["경영지원", "MLB", "MLB KIDS", "Discovery", "Duvetica", "SUPRA"]
@@ -279,6 +283,344 @@ def save_json(data, output_path):
     print(f"  - 저장 완료: {file_size:,} bytes ({file_size / 1024:.1f} KB)")
 
 
+def preprocess_headcount():
+    """인원수 CSV 파일 전처리"""
+    print("\n" + "=" * 60)
+    print("F&F CHINA 인원수 데이터 전처리 시작")
+    print("=" * 60)
+    
+    try:
+        # 사업부 이름 매핑 (CSV의 사업부 -> 시스템의 사업부 ID)
+        business_unit_mapping = {
+            '경영지원': '경영지원',
+            'MLB': 'MLB',
+            'MLB KIDS': 'MLB KIDS',
+            'DISCOVER': 'Discovery',
+            'DISCOVERY': 'Discovery',
+            'DUVETICA': 'Duvetica',
+            'SUPRA': 'SUPRA',
+        }
+        
+        print(f"\n[1/4] 인원수 파일 로드 중... (경로: {HEADCOUNT_FILES_DIR})")
+        
+        # 연도별 파일 찾기 (2024.csv, 2025.csv, 2026.csv 등)
+        csv_files = glob.glob(str(HEADCOUNT_FILES_DIR / "*.csv"))
+        
+        if not csv_files:
+            print(f"[경고] 인원수 파일을 찾을 수 없습니다: {HEADCOUNT_FILES_DIR}")
+            return
+        
+        # 연도별로 파일 정렬
+        year_files = {}
+        for file_path in sorted(csv_files):
+            filename = os.path.basename(file_path)
+            # YYYY.csv 형식에서 연도 추출
+            if filename.endswith('.csv'):
+                try:
+                    year = int(filename.replace('.csv', ''))
+                    year_files[year] = file_path
+                    print(f"  - {filename} (연도: {year})")
+                except ValueError:
+                    print(f"  [건너뜀] 파일명 형식이 올바르지 않습니다: {filename}")
+        
+        if not year_files:
+            print("[경고] 로드된 인원수 파일이 없습니다.")
+            return
+        
+        print(f"\n[2/4] CSV 파일 파싱 중...")
+        
+        headcount_data = {}
+        years = sorted(year_files.keys())
+        
+        for year in years:
+            file_path = year_files[year]
+            try:
+                # CSV 읽기 (UTF-8 BOM 처리)
+                df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
+                df.columns = df.columns.str.strip()
+                
+                # 사업부 컬럼 확인
+                if '사업부' not in df.columns:
+                    print(f"  [경고] {year}년 파일에 '사업부' 컬럼이 없습니다. 컬럼: {list(df.columns)}")
+                    continue
+                
+                # 월 컬럼 찾기 (1월~12월)
+                month_columns = {}
+                for col in df.columns:
+                    col_trimmed = col.strip()
+                    # "1월", "2월" 형식 매칭
+                    if col_trimmed.endswith('월'):
+                        try:
+                            month_num = int(col_trimmed.replace('월', ''))
+                            if 1 <= month_num <= 12:
+                                month_key = f"{year}-{month_num:02d}"
+                                month_columns[month_key] = col
+                        except ValueError:
+                            pass
+                
+                if not month_columns:
+                    print(f"  [경고] {year}년 파일에서 월 컬럼을 찾을 수 없습니다.")
+                    continue
+                
+                print(f"  - {year}년: {len(month_columns)}개 월 컬럼 발견")
+                
+                # 데이터 행 처리
+                for _, row in df.iterrows():
+                    business_unit = str(row['사업부']).strip()
+                    
+                    if not business_unit or business_unit == 'nan':
+                        continue
+                    
+                    # 사업부 매핑
+                    mapped_bu = business_unit_mapping.get(business_unit)
+                    if not mapped_bu:
+                        # 대소문자 무시 매칭 시도
+                        upper_bu = business_unit.upper()
+                        mapped_bu = business_unit_mapping.get(upper_bu)
+                        if not mapped_bu:
+                            # 공백 정규화 후 매칭
+                            normalized_bu = ' '.join(upper_bu.split())
+                            mapped_bu = business_unit_mapping.get(normalized_bu)
+                    
+                    if not mapped_bu:
+                        # 매핑되지 않은 사업부는 로그만 남기고 스킵
+                        if len(headcount_data) == 0:  # 첫 데이터 행에서만 경고
+                            print(f"  [주의] 매핑되지 않은 사업부: '{business_unit}'")
+                        continue
+                    
+                    # 사업부별 데이터 초기화
+                    if mapped_bu not in headcount_data:
+                        headcount_data[mapped_bu] = {}
+                    
+                    # 월별 인원수 저장
+                    for month_key, col_name in month_columns.items():
+                        value = str(row[col_name]).strip()
+                        
+                        # 빈 값 처리
+                        if value == '' or value == '-' or value == 'nan' or value.lower() == 'n/a':
+                            continue
+                        
+                        try:
+                            # 숫자 추출 (쉼표, 공백 제거)
+                            clean_value = value.replace(',', '').replace(' ', '')
+                            headcount = int(float(clean_value))  # float으로 먼저 변환 후 int (소수점 처리)
+                            
+                            if headcount >= 0:
+                                headcount_data[mapped_bu][month_key] = headcount
+                        except (ValueError, TypeError):
+                            # 파싱 실패는 무시
+                            pass
+                
+                print(f"  - {year}년 처리 완료")
+                
+            except Exception as e:
+                print(f"  [실패] {year}년 파일 처리 실패: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        if not headcount_data:
+            print("[경고] 처리된 인원수 데이터가 없습니다.")
+            return
+        
+        print(f"\n[3/4] JSON 변환 중...")
+        
+        # 최종 JSON 구조
+        result = {
+            "metadata": {
+                "generatedAt": datetime.now().isoformat(),
+                "years": years,
+                "businessUnits": list(headcount_data.keys())
+            },
+            "data": headcount_data
+        }
+        
+        # 사업부별 월 수 확인
+        for bu in headcount_data.keys():
+            month_count = len(headcount_data[bu])
+            print(f"  - {bu}: {month_count}개 월 데이터")
+        
+        print(f"\n[4/4] JSON 저장 중: {HEADCOUNT_OUTPUT_FILE}")
+        save_json(result, HEADCOUNT_OUTPUT_FILE)
+        
+        print("\n" + "=" * 60)
+        print("인원수 데이터 전처리 완료!")
+        print("=" * 60)
+        
+    except Exception as e:
+        print(f"\n인원수 데이터 전처리 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def preprocess_store_headcount():
+    """매장 인원수 CSV 파일 전처리"""
+    print("\n" + "=" * 60)
+    print("F&F CHINA 매장 인원수 데이터 전처리 시작")
+    print("=" * 60)
+    
+    try:
+        # 사업부 이름 매핑 (CSV의 사업부 -> 시스템의 사업부 ID)
+        # 경영지원 제외 (매장이 아니므로)
+        business_unit_mapping = {
+            'MLB': 'MLB',
+            'MLB KIDS': 'MLB KIDS',
+            'DISCOVER': 'Discovery',
+            'DISCOVERY': 'Discovery',
+            'DUVETICA': 'Duvetica',
+            'SUPRA': 'SUPRA',
+        }
+        
+        print(f"\n[1/4] 매장 인원수 파일 로드 중... (경로: {HEADCOUNT_STORE_FILES_DIR})")
+        
+        # 연도별 파일 찾기 (2024.csv, 2025.csv, 2026.csv 등)
+        csv_files = glob.glob(str(HEADCOUNT_STORE_FILES_DIR / "*.csv"))
+        
+        if not csv_files:
+            print(f"[경고] 매장 인원수 파일을 찾을 수 없습니다: {HEADCOUNT_STORE_FILES_DIR}")
+            return
+        
+        # 연도별로 파일 정렬
+        year_files = {}
+        for file_path in sorted(csv_files):
+            filename = os.path.basename(file_path)
+            # YYYY.csv 형식에서 연도 추출
+            if filename.endswith('.csv'):
+                try:
+                    year = int(filename.replace('.csv', ''))
+                    year_files[year] = file_path
+                    print(f"  - {filename} (연도: {year})")
+                except ValueError:
+                    print(f"  [건너뜀] 파일명 형식이 올바르지 않습니다: {filename}")
+        
+        if not year_files:
+            print("[경고] 로드된 매장 인원수 파일이 없습니다.")
+            return
+        
+        print(f"\n[2/4] CSV 파일 파싱 중...")
+        
+        headcount_data = {}
+        years = sorted(year_files.keys())
+        
+        for year in years:
+            file_path = year_files[year]
+            try:
+                # CSV 읽기 (UTF-8 BOM 처리)
+                df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
+                df.columns = df.columns.str.strip()
+                
+                # 사업부 컬럼 확인
+                if '사업부' not in df.columns:
+                    print(f"  [경고] {year}년 파일에 '사업부' 컬럼이 없습니다. 컬럼: {list(df.columns)}")
+                    continue
+                
+                # 월 컬럼 찾기 (1월~12월)
+                month_columns = {}
+                for col in df.columns:
+                    col_trimmed = col.strip()
+                    # "1월", "2월" 형식 매칭
+                    if col_trimmed.endswith('월'):
+                        try:
+                            month_num = int(col_trimmed.replace('월', ''))
+                            if 1 <= month_num <= 12:
+                                month_key = f"{year}-{month_num:02d}"
+                                month_columns[month_key] = col
+                        except ValueError:
+                            pass
+                
+                if not month_columns:
+                    print(f"  [경고] {year}년 파일에서 월 컬럼을 찾을 수 없습니다.")
+                    continue
+                
+                print(f"  - {year}년: {len(month_columns)}개 월 컬럼 발견")
+                
+                # 데이터 행 처리
+                for _, row in df.iterrows():
+                    business_unit = str(row['사업부']).strip()
+                    
+                    if not business_unit or business_unit == 'nan':
+                        continue
+                    
+                    # 사업부 매핑
+                    mapped_bu = business_unit_mapping.get(business_unit)
+                    if not mapped_bu:
+                        # 대소문자 무시 매칭 시도
+                        upper_bu = business_unit.upper()
+                        mapped_bu = business_unit_mapping.get(upper_bu)
+                        if not mapped_bu:
+                            # 공백 정규화 후 매칭
+                            normalized_bu = ' '.join(upper_bu.split())
+                            mapped_bu = business_unit_mapping.get(normalized_bu)
+                    
+                    if not mapped_bu:
+                        # 매핑되지 않은 사업부는 로그만 남기고 스킵 (경영지원 등)
+                        if len(headcount_data) == 0:  # 첫 데이터 행에서만 경고
+                            print(f"  [주의] 매핑되지 않은 사업부 (경영지원 제외): '{business_unit}'")
+                        continue
+                    
+                    # 사업부별 데이터 초기화
+                    if mapped_bu not in headcount_data:
+                        headcount_data[mapped_bu] = {}
+                    
+                    # 월별 인원수 저장
+                    for month_key, col_name in month_columns.items():
+                        value = str(row[col_name]).strip()
+                        
+                        # 빈 값 처리
+                        if value == '' or value == '-' or value == 'nan' or value.lower() == 'n/a':
+                            continue
+                        
+                        try:
+                            # 숫자 추출 (쉼표, 공백 제거)
+                            clean_value = value.replace(',', '').replace(' ', '')
+                            headcount = int(float(clean_value))  # float으로 먼저 변환 후 int (소수점 처리)
+                            
+                            if headcount >= 0:
+                                headcount_data[mapped_bu][month_key] = headcount
+                        except (ValueError, TypeError):
+                            # 파싱 실패는 무시
+                            pass
+                
+                print(f"  - {year}년 처리 완료")
+                
+            except Exception as e:
+                print(f"  [실패] {year}년 파일 처리 실패: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        if not headcount_data:
+            print("[경고] 처리된 매장 인원수 데이터가 없습니다.")
+            return
+        
+        print(f"\n[3/4] JSON 변환 중...")
+        
+        # 최종 JSON 구조
+        result = {
+            "metadata": {
+                "generatedAt": datetime.now().isoformat(),
+                "years": years,
+                "businessUnits": list(headcount_data.keys())
+            },
+            "data": headcount_data
+        }
+        
+        # 사업부별 월 수 확인
+        for bu in headcount_data.keys():
+            month_count = len(headcount_data[bu])
+            print(f"  - {bu}: {month_count}개 월 데이터")
+        
+        print(f"\n[4/4] JSON 저장 중: {STORE_HEADCOUNT_OUTPUT_FILE}")
+        save_json(result, STORE_HEADCOUNT_OUTPUT_FILE)
+        
+        print("\n" + "=" * 60)
+        print("매장 인원수 데이터 전처리 완료!")
+        print("=" * 60)
+        
+    except Exception as e:
+        print(f"\n매장 인원수 데이터 전처리 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     """메인 실행 함수"""
     print("=" * 60)
@@ -292,34 +634,38 @@ def main():
         # 2. 비용 파일 로드
         cost_df, months = load_cost_files()
         
-        if cost_df.empty:
-            print("\n[오류] 비용 파일이 없습니다. 전처리를 중단합니다.")
-            return
+        if not cost_df.empty:
+            # 3. 데이터 정제
+            cost_df = clean_and_filter_data(cost_df)
+            
+            # 4. 마스터 조인
+            cost_df = join_with_masters(cost_df, cost_center_master, account_master)
+            
+            # 5. 분석 대상 필터링
+            cost_df = filter_target_business_units(cost_df)
+            
+            # 6. 집계
+            aggregated_df = aggregate_data(cost_df)
+            
+            # 7. JSON 변환
+            json_data = convert_to_hierarchical_json(aggregated_df, months)
+            
+            # 8. 파일 저장
+            save_json(json_data, OUTPUT_FILE)
+            
+            print("\n" + "=" * 60)
+            print("비용 데이터 전처리 완료!")
+            print("=" * 60)
+        else:
+            print("\n[경고] 비용 파일이 없습니다. 비용 데이터 전처리를 건너뜁니다.")
         
-        # 3. 데이터 정제
-        cost_df = clean_and_filter_data(cost_df)
+        # 인원수 데이터 전처리 (비용 데이터와 독립적으로 실행)
+        preprocess_headcount()  # 사무실 인원수
+        preprocess_store_headcount()  # 매장 인원수
         
-        # 4. 마스터 조인
-        cost_df = join_with_masters(cost_df, cost_center_master, account_master)
-        
-        # 5. 분석 대상 필터링
-        cost_df = filter_target_business_units(cost_df)
-        
-        # 6. 집계
-        aggregated_df = aggregate_data(cost_df)
-        
-        # 7. JSON 변환
-        json_data = convert_to_hierarchical_json(aggregated_df, months)
-        
-        # 8. 파일 저장
-        save_json(json_data, OUTPUT_FILE)
-        
-        print("\n" + "=" * 60)
-        print("전처리 완료!")
-        print("=" * 60)
         print(f"\n다음 단계:")
-        print(f"   1. git add {OUTPUT_FILE.relative_to(BASE_DIR)}")
-        print(f"   2. git commit -m 'Update: 비용 데이터 업데이트'")
+        print(f"   1. git add {OUTPUT_FILE.relative_to(BASE_DIR)} {HEADCOUNT_OUTPUT_FILE.relative_to(BASE_DIR)} {STORE_HEADCOUNT_OUTPUT_FILE.relative_to(BASE_DIR)}")
+        print(f"   2. git commit -m 'Update: 비용 및 인원수 데이터 업데이트'")
         print(f"   3. git push origin main")
         print(f"   4. Vercel 자동 배포 확인")
         

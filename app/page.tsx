@@ -7,11 +7,14 @@
 import { useState, useEffect } from 'react';
 import DashboardHeader from '@/components/DashboardHeader';
 import BusinessUnitCard from '@/components/BusinessUnitCard';
-import { CostData, ViewMode, BUSINESS_UNITS } from '@/lib/types';
-import { loadCostData, isDataEmpty } from '@/lib/data-loader';
+import { CostData, ViewMode, BUSINESS_UNITS, HeadcountData, StoreHeadcountData, RetailSalesData } from '@/lib/types';
+import { loadCostData, isDataEmpty, loadHeadcountData, loadStoreHeadcountData, loadRetailSalesData } from '@/lib/data-loader';
 
 export default function HomePage() {
   const [data, setData] = useState<CostData | null>(null);
+  const [headcountData, setHeadcountData] = useState<HeadcountData | null>(null);
+  const [storeHeadcountData, setStoreHeadcountData] = useState<StoreHeadcountData | null>(null);
+  const [retailSalesData, setRetailSalesData] = useState<RetailSalesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -24,12 +27,16 @@ export default function HomePage() {
   // 기타 사업부 표시 여부 (Duvetica, SUPRA)
   const [showOtherBU, setShowOtherBU] = useState<boolean>(false);
   
-  // 데이터 로드
+  // 데이터 로드 (초기 로드)
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
-        const costData = await loadCostData();
+        const [costData, headcount, storeHeadcount] = await Promise.all([
+          loadCostData(),
+          loadHeadcountData(),
+          loadStoreHeadcountData(),
+        ]);
         
         if (isDataEmpty(costData)) {
           setError('비용 데이터가 없습니다. Python 전처리 스크립트를 실행해주세요.');
@@ -37,6 +44,8 @@ export default function HomePage() {
         }
         
         setData(costData);
+        setHeadcountData(headcount);
+        setStoreHeadcountData(storeHeadcount);
         
         // 가장 최근 월을 기본값으로 설정
         const months = costData.metadata.months;
@@ -53,6 +62,47 @@ export default function HomePage() {
     
     fetchData();
   }, []);
+
+  // 리테일 매출 데이터 로드 (selectedMonth, viewMode 변경 시)
+  useEffect(() => {
+    if (!selectedMonth) return;
+    
+    async function fetchRetailSales() {
+      try {
+        const retailSales = await loadRetailSalesData(selectedMonth, viewMode);
+        setRetailSalesData(retailSales);
+      } catch (err) {
+        console.error('리테일 매출 데이터 로드 실패:', err);
+        setRetailSalesData(null);
+      }
+    }
+    
+    fetchRetailSales();
+  }, [selectedMonth, viewMode]);
+  
+  // 사무실 인원수 조회 헬퍼 함수
+  const getOfficeHeadcount = (buId: string, month: string): number | null => {
+    if (!headcountData || !headcountData[buId]) return null;
+    return headcountData[buId][month] ?? null;
+  };
+  
+  // 매장 인원수 조회 헬퍼 함수
+  const getStoreHeadcount = (buId: string, month: string): number | null => {
+    if (!storeHeadcountData || !storeHeadcountData[buId]) return null;
+    return storeHeadcountData[buId][month] ?? null;
+  };
+  
+  // 리테일 매출 조회 헬퍼 함수
+  const getRetailSales = (buId: string, month: string): number | null => {
+    if (!retailSalesData || !retailSalesData[buId]) return null;
+    return retailSalesData[buId][month] ?? null;
+  };
+  
+  // 리테일 매출 전체 데이터 조회 (YoY 계산용)
+  const getRetailSalesData = (buId: string): { [month: string]: number } | null => {
+    if (!retailSalesData || !retailSalesData[buId]) return null;
+    return retailSalesData[buId];
+  };
   
   // 로딩 상태
   if (loading) {
@@ -155,6 +205,90 @@ export default function HomePage() {
               }
             });
             
+            // 법인 사무실 인원수 합산 (모든 사업부 포함)
+            const corporateOfficeHeadcount = (() => {
+              let total = 0;
+              let hasData = false;
+              buIds.forEach(buId => {
+                const hc = getOfficeHeadcount(buId, selectedMonth);
+                if (hc !== null) {
+                  total += hc;
+                  hasData = true;
+                }
+              });
+              return hasData ? total : null;
+            })();
+            
+            // 법인 매장 인원수 합산 (경영지원 제외)
+            const corporateStoreHeadcount = (() => {
+              let total = 0;
+              let hasData = false;
+              buIds.filter(buId => buId !== '경영지원').forEach(buId => {
+                const hc = getStoreHeadcount(buId, selectedMonth);
+                if (hc !== null) {
+                  total += hc;
+                  hasData = true;
+                }
+              });
+              return hasData ? total : null;
+            })();
+            
+            // 법인 사무실 인원수 전체 데이터 (YoY 계산용)
+            const corporateOfficeHeadcountData = (() => {
+              const result: { [month: string]: number } = {};
+              buIds.forEach(buId => {
+                const buData = headcountData?.[buId];
+                if (buData) {
+                  Object.keys(buData).forEach(month => {
+                    result[month] = (result[month] || 0) + buData[month];
+                  });
+                }
+              });
+              return Object.keys(result).length > 0 ? result : null;
+            })();
+            
+            // 법인 매장 인원수 전체 데이터 (YoY 계산용, 경영지원 제외)
+            const corporateStoreHeadcountData = (() => {
+              const result: { [month: string]: number } = {};
+              buIds.filter(buId => buId !== '경영지원').forEach(buId => {
+                const buData = storeHeadcountData?.[buId];
+                if (buData) {
+                  Object.keys(buData).forEach(month => {
+                    result[month] = (result[month] || 0) + buData[month];
+                  });
+                }
+              });
+              return Object.keys(result).length > 0 ? result : null;
+            })();
+            
+            // 법인 리테일 매출 합산 (모든 브랜드 합계, 경영지원 제외)
+            const corporateRetailSales = (() => {
+              let total = 0;
+              let hasData = false;
+              buIds.filter(buId => buId !== '경영지원').forEach(buId => {
+                const sales = getRetailSales(buId, selectedMonth);
+                if (sales !== null) {
+                  total += sales;
+                  hasData = true;
+                }
+              });
+              return hasData ? total : null;
+            })();
+            
+            // 법인 리테일 매출 전체 데이터 (YoY 계산용, 경영지원 제외)
+            const corporateRetailSalesData = (() => {
+              const result: { [month: string]: number } = {};
+              buIds.filter(buId => buId !== '경영지원').forEach(buId => {
+                const buData = getRetailSalesData(buId);
+                if (buData) {
+                  Object.keys(buData).forEach(month => {
+                    result[month] = (result[month] || 0) + buData[month];
+                  });
+                }
+              });
+              return Object.keys(result).length > 0 ? result : null;
+            })();
+            
             return (
               <BusinessUnitCard
                 key="법인"
@@ -164,6 +298,12 @@ export default function HomePage() {
                 data={corporateData}
                 selectedMonth={selectedMonth}
                 viewMode={viewMode}
+                officeHeadcount={corporateOfficeHeadcount}
+                storeHeadcount={corporateStoreHeadcount}
+                officeHeadcountData={corporateOfficeHeadcountData}
+                storeHeadcountData={corporateStoreHeadcountData}
+                retailSales={corporateRetailSales}
+                retailSalesData={corporateRetailSalesData}
               />
             );
           })()}
@@ -196,6 +336,12 @@ export default function HomePage() {
                 data={buData}
                 selectedMonth={selectedMonth}
                 viewMode={viewMode}
+                officeHeadcount={getOfficeHeadcount(bu.id, selectedMonth)}
+                storeHeadcount={getStoreHeadcount(bu.id, selectedMonth)}
+                officeHeadcountData={headcountData?.[bu.id] || null}
+                storeHeadcountData={storeHeadcountData?.[bu.id] || null}
+                retailSales={getRetailSales(bu.id, selectedMonth)}
+                retailSalesData={getRetailSalesData(bu.id)}
               />
             );
           })}
@@ -228,6 +374,12 @@ export default function HomePage() {
                 data={buData}
                 selectedMonth={selectedMonth}
                 viewMode={viewMode}
+                officeHeadcount={getOfficeHeadcount(bu.id, selectedMonth)}
+                storeHeadcount={getStoreHeadcount(bu.id, selectedMonth)}
+                officeHeadcountData={headcountData?.[bu.id] || null}
+                storeHeadcountData={storeHeadcountData?.[bu.id] || null}
+                retailSales={getRetailSales(bu.id, selectedMonth)}
+                retailSalesData={getRetailSalesData(bu.id)}
               />
             );
           })}

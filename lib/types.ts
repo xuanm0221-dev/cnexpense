@@ -33,6 +33,19 @@ export interface CostData {
   data: BusinessUnitData;
 }
 
+// 인원수 데이터 구조
+export interface HeadcountData {
+  [businessUnit: string]: MonthlyAmounts; // "MLB": { "2024-01": 127, "2024-02": 124, ... }
+}
+
+// 매장 인원수 데이터 구조 (사무실 인원수와 동일한 구조)
+export type StoreHeadcountData = HeadcountData;
+
+// 리테일 매출 데이터 구조
+export interface RetailSalesData {
+  [businessUnit: string]: MonthlyAmounts; // "MLB": { "2024-01": 12345678, ... }
+}
+
 // YoY 계산 결과
 export interface YoYResult {
   pct: number | 'N/A';    // 증감률 (%)

@@ -21,6 +21,8 @@ interface CostTypeTabsProps {
   selectedMonth: string;
   viewMode: ViewMode;
   color: string;
+  activeTab?: CostType; // controlled component 지원
+  onTabChange?: (tab: CostType) => void; // 탭 변경 콜백
 }
 
 export default function CostTypeTabs({
@@ -29,13 +31,19 @@ export default function CostTypeTabs({
   selectedMonth,
   viewMode,
   color,
+  activeTab: externalActiveTab,
+  onTabChange,
 }: CostTypeTabsProps) {
   // 직접비와 영업비 데이터 존재 여부 확인
   const hasDirectCosts = Object.keys(directCosts).length > 0;
   const hasOperatingCosts = Object.keys(operatingCosts).length > 0;
   
-  // 초기 탭은 전체로 설정
-  const [activeTab, setActiveTab] = useState<CostType>('전체');
+  // 내부 상태 (uncontrolled component용)
+  const [internalActiveTab, setInternalActiveTab] = useState<CostType>('전체');
+  
+  // controlled component 지원: externalActiveTab이 있으면 사용, 없으면 내부 state 사용
+  const activeTab = externalActiveTab ?? internalActiveTab;
+  const setActiveTab = onTabChange ?? setInternalActiveTab;
   
   const isYTD = viewMode === '누적(YTD)';
   
