@@ -3,8 +3,14 @@
 """
 비용 데이터 전처리 스크립트
 월별 CSV 파일을 읽어서 마스터와 조인하고, 집계된 JSON 파일을 생성합니다.
+
+실행 모드:
+  - 기본(증분): 새로 추가된 월만 처리 후 기존 JSON과 병합
+  - --full: 전체 기간 다시 처리 (로직/마스터 변경 시 사용)
 """
 
+import argparse
+import numpy as np
 import pandas as pd
 import json
 import os
@@ -14,7 +20,7 @@ from pathlib import Path
 
 # 경로 설정
 BASE_DIR = Path(__file__).parent.parent
-COST_FILES_DIR = BASE_DIR.parent / "비용파일"  # 상위 폴더의 비용파일 참조
+COST_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/비용파일")
 HEADCOUNT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/사무실인원수")
 HEADCOUNT_STORE_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/매장인원수")
 MASTERS_DIR = BASE_DIR / "data" / "masters"
@@ -55,46 +61,77 @@ def load_master_files():
     return cost_center_master, account_master
 
 
-def load_cost_files():
-    """비용 CSV 파일들을 동적으로 로드"""
-    print(f"\n[2/8] 비용 파일 로드 중... (경로: {COST_FILES_DIR})")
+def load_existing_json():
+    """기존 aggregated-costs.json 로드 (없으면 None)"""
+    if not OUTPUT_FILE.exists():
+        return None
+    try:
+        with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _parse_csv_months(csv_files):
+    """CSV 파일 목록에서 (파일경로, 연월) 리스트 추출"""
+    result = []
+    for file_path in sorted(csv_files):
+        filename = os.path.basename(file_path)
+        if '.' in filename:
+            try:
+                parts = filename.replace('.csv', '').split('.')
+                if len(parts) == 2:
+                    yy, mm = parts
+                    year = f"20{yy}"
+                    month = mm.zfill(2)
+                    year_month = f"{year}-{month}"
+                    result.append((file_path, year_month))
+            except Exception:
+                pass
+    return result
+
+
+def load_cost_files(existing_months=None):
+    """비용 CSV 파일들을 동적으로 로드
     
-    # YY.MM.csv 패턴의 파일 찾기
+    existing_months: 증분 모드일 때 이미 처리된 월 목록. None이면 전체 로드.
+    """
+    if existing_months is not None:
+        print(f"\n[2/8] 비용 파일 로드 중 (증분)... (경로: {COST_FILES_DIR})")
+    else:
+        print(f"\n[2/8] 비용 파일 로드 중... (경로: {COST_FILES_DIR})")
+    
     csv_files = glob.glob(str(COST_FILES_DIR / "*.csv"))
     
     if not csv_files:
         print(f"[경고] 비용 파일을 찾을 수 없습니다: {COST_FILES_DIR}")
         return pd.DataFrame(), []
     
+    parsed = _parse_csv_months(csv_files)
+    
+    # 증분 모드: 새 월만 필터링
+    if existing_months is not None:
+        existing_set = set(existing_months)
+        parsed = [(fp, ym) for fp, ym in parsed if ym not in existing_set]
+        if not parsed:
+            print("  [증분] 추가할 새 월이 없습니다.")
+            return pd.DataFrame(), []
+        print(f"  [증분] 새로 처리할 월: {sorted(set(ym for _, ym in parsed))}")
+    
     all_data = []
     months = []
     
-    for file_path in sorted(csv_files):
+    for file_path, year_month in parsed:
         filename = os.path.basename(file_path)
-        # YY.MM.csv 형식에서 연월 추출
-        if '.' in filename:
-            try:
-                parts = filename.replace('.csv', '').split('.')
-                if len(parts) == 2:
-                    yy, mm = parts
-                    # 20YY-MM 형식으로 변환
-                    year = f"20{yy}"
-                    month = mm.zfill(2)
-                    year_month = f"{year}-{month}"
-                    
-                    # CSV 읽기
-                    df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
-                    df.columns = df.columns.str.strip()
-                    
-                    # 연월 컬럼 추가
-                    df['연월'] = year_month
-                    
-                    all_data.append(df)
-                    months.append(year_month)
-                    
-                    print(f"  - {filename} -> {year_month} ({len(df)}건)")
-            except Exception as e:
-                print(f"  [실패] {filename} 로드 실패: {e}")
+        try:
+            df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
+            df.columns = df.columns.str.strip()
+            df['연월'] = year_month
+            all_data.append(df)
+            months.append(year_month)
+            print(f"  - {filename} -> {year_month} ({len(df)}건)")
+        except Exception as e:
+            print(f"  [실패] {filename} 로드 실패: {e}")
     
     if not all_data:
         print("[경고] 로드된 비용 데이터가 없습니다.")
@@ -155,11 +192,38 @@ def join_with_masters(df, cost_center_master, account_master):
     if len(no_cost_center) > 0:
         print(f"  [주의] 코스트센터 조인 실패: {len(no_cost_center)}건")
         unique_cc = no_cost_center['코스트 센터'].unique()
-        print(f"     미매칭 코스트센터: {', '.join(map(str, unique_cc[:10]))}")
+        print(f"     미매칭 코스트센터 전체: {', '.join(map(str, unique_cc))}")
     
-    # 2. 계정과목 마스터 조인
+    # 코스트센터 미매칭 + G/L 96030101 → 사업 영역 내역으로 fallback (직접비, 임차료)
+    BUSINESS_AREA_MAPPING = {
+        'MLB': 'MLB', 'MLB KIDS': 'MLB KIDS', 'Discovery': 'Discovery', 'DISCOVERY': 'Discovery',
+        'Duvetica': 'Duvetica', 'DUVETICA': 'Duvetica', 'SUPRA': 'SUPRA', '경영지원': '경영지원',
+    }
+    FALLBACK_ACCOUNTS = ['96030101']
+    BUSINESS_AREA_COL = '사업 영역 내역'
+    
+    no_cc = df['사업부'].isna()
+    is_fallback = df['G/L 계정'].astype(str).str.strip().isin(FALLBACK_ACCOUNTS)
+    need_fallback = no_cc & is_fallback
+    
+    if need_fallback.any() and BUSINESS_AREA_COL in df.columns:
+        def _map_bu(val):
+            v = str(val).strip() if pd.notna(val) else ''
+            return BUSINESS_AREA_MAPPING.get(v) or BUSINESS_AREA_MAPPING.get(v.upper())
+        mapped = df.loc[need_fallback, BUSINESS_AREA_COL].apply(_map_bu)
+        df.loc[need_fallback, '사업부'] = mapped
+        # 96030101 = 직접비
+        filled = need_fallback & df['사업부'].notna()
+        df.loc[filled, '영업/직접'] = '직접비'
+        if filled.sum() > 0:
+            print(f"  [Fallback] 96030101: 사업 영역 내역으로 {filled.sum()}건 사업부 보정 (직접비)")
+    
+    # 2. 계정과목 마스터 조인 (직접/영업: 집계 시 코스트센터보다 우선)
+    acc_cols = ['G/L 계정', '대분류', '중분류', '설명']
+    if '직접/영업' in account_master.columns:
+        acc_cols.append('직접/영업')
     df = df.merge(
-        account_master[['G/L 계정', '대분류', '중준류', '설명']],
+        account_master[acc_cols],
         left_on='G/L 계정',
         right_on='G/L 계정',
         how='left'
@@ -170,7 +234,7 @@ def join_with_masters(df, cost_center_master, account_master):
     if len(no_account) > 0:
         print(f"  [주의] 계정과목 조인 실패: {len(no_account)}건")
         unique_gl = no_account['G/L 계정'].unique()
-        print(f"     미매칭 G/L 계정: {', '.join(map(str, unique_gl[:10]))}")
+        print(f"     미매칭 G/L 계정 전체: {', '.join(map(str, unique_gl))}")
     
     print(f"  - 조인 완료")
     
@@ -188,6 +252,15 @@ def filter_target_business_units(df):
     df = df[df['대분류'].notna()]
     df = df[df['사업부'].isin(TARGET_BUSINESS_UNITS)]
     
+    # 영업/직접: '영업','직접'만 포함, 'X'(배분계정,조정계정) 무조건 제외
+    if '영업/직접' in df.columns:
+        valid_cost_type = ['영업', '직접', '직접비']  # 직접비=fallback(96030101)용
+        before_x = len(df)
+        df = df[df['영업/직접'].isin(valid_cost_type)]
+        x_excluded = before_x - len(df)
+        if x_excluded > 0:
+            print(f"  - 영업/직접 'X' 제외: {x_excluded}건")
+    
     print(f"  - 필터링 완료: {initial_count}건 -> {len(df)}건")
     
     # 사업부별 건수
@@ -202,17 +275,26 @@ def aggregate_data(df):
     """데이터 집계"""
     print("\n[6/8] 데이터 집계 중...")
     
-    # 영업/직접 컬럼명 확인 및 정규화
+    # 코스트센터 기준 (기존): 영업/직접 → 영업비/직접비
     if '영업/직접' in df.columns:
-        cost_type_col = '영업/직접'
+        cc_col = '영업/직접'
     else:
-        cost_type_col = '영업비/직접비'  # 대체 컬럼명
+        cc_col = '영업비/직접비'
+    cc_norm = df[cc_col].replace({'영업': '영업비', '직접': '직접비'})
     
-    # 영업/직접 값 정규화 (영업 → 영업비, 직접 → 직접비)
-    df[cost_type_col] = df[cost_type_col].replace({'영업': '영업비', '직접': '직접비'})
+    # 계정 직접/영업: 코스트센터와 동일 표기(영업·직접). 구 마스터(영업비·직접비)도 호환.
+    # 값이 있으면 코스트센터 무시, 비어 있으면 cc_norm
+    df = df.copy()
+    if '직접/영업' in df.columns:
+        acc_stripped = df['직접/영업'].fillna('').astype(str).str.strip()
+        is_ob = acc_stripped.isin(['영업', '영업비'])
+        is_db = acc_stripped.isin(['직접', '직접비'])
+        df['_집계비용구분'] = np.where(is_ob, '영업비', np.where(is_db, '직접비', cc_norm))
+    else:
+        df['_집계비용구분'] = cc_norm
     
     # 그룹별 집계
-    grouped = df.groupby(['연월', '사업부', cost_type_col, '대분류']).agg({
+    grouped = df.groupby(['연월', '사업부', '_집계비용구분', '대분류']).agg({
         '금액(전표 통화)': 'sum'
     }).reset_index()
     
@@ -266,6 +348,22 @@ def convert_to_hierarchical_json(aggregated_df, months):
     print(f"  - JSON 변환 완료")
     
     return result
+
+
+def merge_json(existing, new_data):
+    """기존 JSON에 새 데이터 병합 (월별 금액만 추가/덮어쓰기)"""
+    for bu in TARGET_BUSINESS_UNITS:
+        if bu not in existing.get("data", {}):
+            existing["data"][bu] = {"직접비": {}, "영업비": {}}
+        for cost_type in ["직접비", "영업비"]:
+            if cost_type not in existing["data"][bu]:
+                existing["data"][bu][cost_type] = {}
+            for category, monthly_amounts in new_data.get("data", {}).get(bu, {}).get(cost_type, {}).items():
+                if category not in existing["data"][bu][cost_type]:
+                    existing["data"][bu][cost_type][category] = {}
+                for month, amount in monthly_amounts.items():
+                    existing["data"][bu][cost_type][category][month] = amount
+    return existing
 
 
 def save_json(data, output_path):
@@ -406,7 +504,8 @@ def preprocess_headcount():
                             headcount = int(float(clean_value))  # float으로 먼저 변환 후 int (소수점 처리)
                             
                             if headcount >= 0:
-                                headcount_data[mapped_bu][month_key] = headcount
+                                # 사업부당 여러 행(부서별)이 있으면 합산
+                                headcount_data[mapped_bu][month_key] = headcount_data[mapped_bu].get(month_key, 0) + headcount
                         except (ValueError, TypeError):
                             # 파싱 실패는 무시
                             pass
@@ -459,7 +558,7 @@ def preprocess_store_headcount():
     print("=" * 60)
     
     try:
-        # 사업부 이름 매핑 (CSV의 사업부 -> 시스템의 사업부 ID)
+        # 사업부 이름 매핑 (CSV의 사업부/브랜드 -> 시스템의 사업부 ID)
         # 경영지원 제외 (매장이 아니므로)
         business_unit_mapping = {
             'MLB': 'MLB',
@@ -508,9 +607,10 @@ def preprocess_store_headcount():
                 df = pd.read_csv(file_path, encoding='utf-8-sig', dtype=str)
                 df.columns = df.columns.str.strip()
                 
-                # 사업부 컬럼 확인
-                if '사업부' not in df.columns:
-                    print(f"  [경고] {year}년 파일에 '사업부' 컬럼이 없습니다. 컬럼: {list(df.columns)}")
+                # 사업부/브랜드 컬럼 확인 (사업부 우선, 없으면 브랜드)
+                bu_col = '사업부' if '사업부' in df.columns else ('브랜드' if '브랜드' in df.columns else None)
+                if not bu_col:
+                    print(f"  [경고] {year}년 파일에 '사업부' 또는 '브랜드' 컬럼이 없습니다. 컬럼: {list(df.columns)}")
                     continue
                 
                 # 월 컬럼 찾기 (1월~12월)
@@ -531,11 +631,11 @@ def preprocess_store_headcount():
                     print(f"  [경고] {year}년 파일에서 월 컬럼을 찾을 수 없습니다.")
                     continue
                 
-                print(f"  - {year}년: {len(month_columns)}개 월 컬럼 발견")
+                print(f"  - {year}년: {len(month_columns)}개 월 컬럼 발견 (사업부컬럼: {bu_col})")
                 
                 # 데이터 행 처리
                 for _, row in df.iterrows():
-                    business_unit = str(row['사업부']).strip()
+                    business_unit = str(row[bu_col]).strip()
                     
                     if not business_unit or business_unit == 'nan':
                         continue
@@ -561,7 +661,7 @@ def preprocess_store_headcount():
                     if mapped_bu not in headcount_data:
                         headcount_data[mapped_bu] = {}
                     
-                    # 월별 인원수 저장
+                    # 월별 인원수 저장 (사업부당 여러 행이 있으면 합산)
                     for month_key, col_name in month_columns.items():
                         value = str(row[col_name]).strip()
                         
@@ -575,7 +675,8 @@ def preprocess_store_headcount():
                             headcount = int(float(clean_value))  # float으로 먼저 변환 후 int (소수점 처리)
                             
                             if headcount >= 0:
-                                headcount_data[mapped_bu][month_key] = headcount
+                                # 사업부당 여러 행(부서별)이 있으면 합산
+                                headcount_data[mapped_bu][month_key] = headcount_data[mapped_bu].get(month_key, 0) + headcount
                         except (ValueError, TypeError):
                             # 파싱 실패는 무시
                             pass
@@ -623,16 +724,32 @@ def preprocess_store_headcount():
 
 def main():
     """메인 실행 함수"""
+    parser = argparse.ArgumentParser(description='비용 데이터 전처리')
+    parser.add_argument('--full', action='store_true', help='전체 기간 다시 처리 (로직/마스터 변경 시)')
+    args = parser.parse_args()
+    is_full = args.full
+    
     print("=" * 60)
-    print("F&F CHINA 비용 데이터 전처리 시작")
+    if is_full:
+        print("F&F CHINA 비용 데이터 전처리 [전체 기간]")
+    else:
+        print("F&F CHINA 비용 데이터 전처리 [증분]")
     print("=" * 60)
     
     try:
         # 1. 마스터 파일 로드
         cost_center_master, account_master = load_master_files()
         
-        # 2. 비용 파일 로드
-        cost_df, months = load_cost_files()
+        existing_months = None
+        existing_json = None
+        if not is_full:
+            existing_json = load_existing_json()
+            if existing_json and "metadata" in existing_json and "months" in existing_json["metadata"]:
+                existing_months = existing_json["metadata"]["months"]
+                print(f"\n  [증분] 기존 데이터 월 수: {len(existing_months)}개")
+        
+        # 2. 비용 파일 로드 (증분 시 새 월만)
+        cost_df, months = load_cost_files(existing_months)
         
         if not cost_df.empty:
             # 3. 데이터 정제
@@ -648,16 +765,26 @@ def main():
             aggregated_df = aggregate_data(cost_df)
             
             # 7. JSON 변환
-            json_data = convert_to_hierarchical_json(aggregated_df, months)
+            new_json = convert_to_hierarchical_json(aggregated_df, months)
             
-            # 8. 파일 저장
-            save_json(json_data, OUTPUT_FILE)
+            # 8. 병합 후 저장 (증분 모드면 기존 + 새 데이터)
+            if not is_full and existing_json:
+                merged_months = sorted(set((existing_json.get("metadata", {}).get("months", []) or []) + months))
+                merged_json = merge_json(existing_json.copy(), new_json)
+                merged_json["metadata"]["months"] = merged_months
+                merged_json["metadata"]["generatedAt"] = datetime.now().isoformat()
+                save_json(merged_json, OUTPUT_FILE)
+            else:
+                save_json(new_json, OUTPUT_FILE)
             
             print("\n" + "=" * 60)
             print("비용 데이터 전처리 완료!")
             print("=" * 60)
         else:
-            print("\n[경고] 비용 파일이 없습니다. 비용 데이터 전처리를 건너뜁니다.")
+            if not is_full and existing_json:
+                print("\n[증분] 추가할 새 월이 없습니다. 기존 데이터 유지.")
+            else:
+                print("\n[경고] 비용 파일이 없습니다. 비용 데이터 전처리를 건너뜁니다.")
         
         # 인원수 데이터 전처리 (비용 데이터와 독립적으로 실행)
         preprocess_headcount()  # 사무실 인원수

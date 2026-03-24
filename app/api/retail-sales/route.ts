@@ -44,10 +44,10 @@ function executeQuery(connection: snowflake.Connection, query: string): Promise<
   });
 }
 
-// 월의 시작일과 종료일 계산
+// 월의 시작일과 종료일 계산 (month는 1~12, JS Date는 month 0~11)
 function getMonthRange(year: number, month: number): { start: string; end: string } {
   const start = `${year}-${month.toString().padStart(2, '0')}-01`;
-  const lastDay = new Date(year, month + 1, 0).getDate();
+  const lastDay = new Date(year, month, 0).getDate(); // month월의 마지막 날
   const end = `${year}-${month.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
   return { start, end };
 }
@@ -55,7 +55,7 @@ function getMonthRange(year: number, month: number): { start: string; end: strin
 // YTD 범위 계산 (1월부터 해당월까지)
 function getYTDRange(year: number, month: number): { start: string; end: string } {
   const start = `${year}-01-01`;
-  const lastDay = new Date(year, month + 1, 0).getDate();
+  const lastDay = new Date(year, month, 0).getDate();
   const end = `${year}-${month.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
   return { start, end };
 }
@@ -99,12 +99,15 @@ export async function GET(request: NextRequest) {
       });
     });
 
+    // 테이블 참조 (env로 오버라이드 가능, chn.dw_sale = DB.CHN 스키마 또는 CHN 스키마)
+    const tableRef = process.env.SNOWFLAKE_RETAIL_TABLE || 'chn.dw_sale';
+
     // 현재 월 데이터 조회
     const currentQuery = `
       SELECT 
         brd_cd,
         SUM(sale_amt) as total_sales
-      FROM chn.dw_sale
+      FROM ${tableRef}
       WHERE sale_dt >= '${currentRange.start}' 
         AND sale_dt <= '${currentRange.end}'
         AND brd_cd IN ('M', 'I', 'X', 'V', 'W')
@@ -116,7 +119,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         brd_cd,
         SUM(sale_amt) as total_sales
-      FROM chn.dw_sale
+      FROM ${tableRef}
       WHERE sale_dt >= '${prevRange.start}' 
         AND sale_dt <= '${prevRange.end}'
         AND brd_cd IN ('M', 'I', 'X', 'V', 'W')
