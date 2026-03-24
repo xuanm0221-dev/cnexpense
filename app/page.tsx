@@ -4,10 +4,10 @@
  * 홈 대시보드 페이지
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import DashboardHeader from '@/components/DashboardHeader';
 import BusinessUnitCard from '@/components/BusinessUnitCard';
-import { CostData, ViewMode, BUSINESS_UNITS, HeadcountData, StoreHeadcountData, RetailSalesData } from '@/lib/types';
+import { CostData, ViewMode, CostType, BUSINESS_UNITS, HeadcountData, StoreHeadcountData, RetailSalesData } from '@/lib/types';
 import { loadCostData, isDataEmpty, loadHeadcountData, loadStoreHeadcountData, loadRetailSalesData } from '@/lib/data-loader';
 
 export default function HomePage() {
@@ -26,6 +26,9 @@ export default function HomePage() {
   
   // 기타 사업부 표시 여부 (Duvetica, SUPRA)
   const [showOtherBU, setShowOtherBU] = useState<boolean>(false);
+  
+  // 직접비/영업비/전체 탭 (모든 카드 동기화)
+  const [activeTab, setActiveTab] = useState<CostType>('전체');
   
   // 데이터 로드 (초기 로드)
   useEffect(() => {
@@ -47,10 +50,13 @@ export default function HomePage() {
         setHeadcountData(headcount);
         setStoreHeadcountData(storeHeadcount);
         
-        // 가장 최근 월을 기본값으로 설정
-        const months = costData.metadata.months;
-        if (months.length > 0) {
-          setSelectedMonth(months[months.length - 1]);
+        // 가장 최근 월을 기본값으로 설정 (비용+인원수 통합 월 목록 사용)
+        const costMonths = costData.metadata.months;
+        const headcountMonths = headcount ? Object.values(headcount).flatMap(bu => Object.keys(bu)) : [];
+        const storeMonths = storeHeadcount ? Object.values(storeHeadcount).flatMap(bu => Object.keys(bu)) : [];
+        const allMonths = [...new Set([...costMonths, ...headcountMonths, ...storeMonths])].sort();
+        if (allMonths.length > 0) {
+          setSelectedMonth(allMonths[allMonths.length - 1]);
         }
       } catch (err) {
         console.error('데이터 로드 실패:', err);
@@ -62,6 +68,14 @@ export default function HomePage() {
     
     fetchData();
   }, []);
+
+  // 비용·인원수·매장인원수 월 목록 통합 (2026년 등 신규 월 표시)
+  const mergedMonths = useMemo(() => {
+    const costMonths = data?.metadata?.months ?? [];
+    const headcountMonths = headcountData ? Object.values(headcountData).flatMap(bu => Object.keys(bu)) : [];
+    const storeMonths = storeHeadcountData ? Object.values(storeHeadcountData).flatMap(bu => Object.keys(bu)) : [];
+    return [...new Set([...costMonths, ...headcountMonths, ...storeMonths])].sort();
+  }, [data, headcountData, storeHeadcountData]);
 
   // 리테일 매출 데이터 로드 (selectedMonth, viewMode 변경 시)
   useEffect(() => {
@@ -153,7 +167,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50">
       {/* 헤더 */}
       <DashboardHeader
-        months={data.metadata.months}
+        months={mergedMonths}
         selectedMonth={selectedMonth}
         viewMode={viewMode}
         onMonthChange={setSelectedMonth}
@@ -304,6 +318,8 @@ export default function HomePage() {
                 storeHeadcountData={corporateStoreHeadcountData}
                 retailSales={corporateRetailSales}
                 retailSalesData={corporateRetailSalesData}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
               />
             );
           })()}
@@ -342,6 +358,8 @@ export default function HomePage() {
                 storeHeadcountData={storeHeadcountData?.[bu.id] || null}
                 retailSales={getRetailSales(bu.id, selectedMonth)}
                 retailSalesData={getRetailSalesData(bu.id)}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
               />
             );
           })}
@@ -380,6 +398,8 @@ export default function HomePage() {
                 storeHeadcountData={storeHeadcountData?.[bu.id] || null}
                 retailSales={getRetailSales(bu.id, selectedMonth)}
                 retailSalesData={getRetailSalesData(bu.id)}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
               />
             );
           })}

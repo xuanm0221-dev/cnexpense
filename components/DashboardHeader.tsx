@@ -5,11 +5,15 @@
  * - 제목
  * - 년/월 선택기
  * - 당월/YTD 전역 탭
- * - CSV 다운로드 버튼
+ * - 전처리 명령 복사 버튼
  */
 
+import { useState } from 'react';
 import MonthSelector from './MonthSelector';
 import { ViewMode } from '@/lib/types';
+
+const PREPROCESS_CMD_INCREMENTAL = 'python scripts/preprocess.py';
+const PREPROCESS_CMD_FULL = 'python scripts/preprocess.py --full';
 
 interface DashboardHeaderProps {
   months: string[];
@@ -26,6 +30,18 @@ export default function DashboardHeader({
   onMonthChange,
   onViewModeChange,
 }: DashboardHeaderProps) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copyPreprocessCmd = async (cmd: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 2000);
+    } catch (err) {
+      console.error('복사 실패:', err);
+    }
+  };
+
   return (
     <div className="bg-white border-b border-gray-200 px-2 py-4">
       <div className="max-w-[1920px] mx-auto">
@@ -84,6 +100,25 @@ export default function DashboardHeader({
               selectedMonth={selectedMonth}
               onChange={onMonthChange}
             />
+          </div>
+          
+          {/* 전처리 명령 버튼 (월 선택 우측) */}
+          <div className="pb-3 ml-auto flex items-center gap-2">
+            <span className="text-xs text-gray-400 mr-2">전처리:</span>
+            <button
+              onClick={() => copyPreprocessCmd(PREPROCESS_CMD_INCREMENTAL, '증분')}
+              title={PREPROCESS_CMD_INCREMENTAL}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+            >
+              {copied === '증분' ? '복사됨 ✓' : '증분'}
+            </button>
+            <button
+              onClick={() => copyPreprocessCmd(PREPROCESS_CMD_FULL, '전체')}
+              title={PREPROCESS_CMD_FULL}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors"
+            >
+              {copied === '전체' ? '복사됨 ✓' : '전체'}
+            </button>
           </div>
         </div>
       </div>

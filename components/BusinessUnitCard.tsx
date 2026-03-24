@@ -24,6 +24,8 @@ interface BusinessUnitCardProps {
   storeHeadcountData?: MonthlyAmounts | null; // 매장 인원수 전체 데이터 (YoY 계산용)
   retailSales?: number | null; // 리테일 매출 (현재 월)
   retailSalesData?: MonthlyAmounts | null; // 리테일 매출 전체 데이터 (YoY 계산용)
+  activeTab?: CostType; // 직접비/영업비/전체 탭 (상위에서 제어 시 모든 카드 동기화)
+  onTabChange?: (tab: CostType) => void;
 }
 
 export default function BusinessUnitCard({
@@ -39,11 +41,15 @@ export default function BusinessUnitCard({
   storeHeadcountData,
   retailSales,
   retailSalesData,
+  activeTab: externalActiveTab,
+  onTabChange,
 }: BusinessUnitCardProps) {
   const isYTD = viewMode === '누적(YTD)';
   
-  // activeTab state 관리
-  const [activeTab, setActiveTab] = useState<CostType>('전체');
+  // activeTab: 상위에서 전달되면 동기화, 없으면 카드별 독립
+  const [internalActiveTab, setInternalActiveTab] = useState<CostType>('전체');
+  const activeTab = externalActiveTab ?? internalActiveTab;
+  const setActiveTab = onTabChange ?? setInternalActiveTab;
   
   // 총 비용 계산 (직접비 + 영업비)
   const directTotal = calculateCategoryTotal(data.직접비, selectedMonth, isYTD);
@@ -59,6 +65,14 @@ export default function BusinessUnitCard({
       return directTotal + operatingTotal;
     }
   }, [activeTab, directTotal, operatingTotal]);
+  
+  // 비용률 = 탭 기준 비용 합계 / 리테일매출 × 100 (전체·직접비·영업비 동일)
+  const costToSalesPercent = useMemo(() => {
+    if (retailSales === null || retailSales === undefined || retailSales === 0) {
+      return null;
+    }
+    return (displayTotalCost / retailSales) * 100;
+  }, [displayTotalCost, retailSales]);
   
   // 탭별 인원수 계산
   const displayHeadcount = useMemo(() => {
@@ -440,12 +454,11 @@ export default function BusinessUnitCard({
         {/* 영업비율, 인원수, 리테일매출 등 (향후 확장용) */}
         <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
           <div>
-            <div className="text-gray-500">영업비율</div>
+            <div className="text-gray-500">비용률</div>
             <div className="font-semibold text-gray-800">
-              {displayTotalCost > 0
-                ? ((operatingTotal / displayTotalCost) * 100).toFixed(1)
-                : '0.0'}
-              %
+              {costToSalesPercent !== null
+                ? `${costToSalesPercent.toFixed(1)}%`
+                : '-'}
             </div>
           </div>
           <div>

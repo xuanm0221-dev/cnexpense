@@ -55,10 +55,10 @@
 2100,본사,MLB,CNFM0055,MLB_BMD,MD,영업
 2100,본사,MLB,CNFM0085,MLB_MARKETING,마케팅,영업
 2100,본사,MLB,CNFM0095,MLB_INTERIOR,인테리어,영업
-2100,본사,MLB,CNFM0100,MLB_FR_STORE,영업(대리상오프),영업
-2100,본사,MLB,CNFM0110,MLB_OR_STORE,영업(직영오프),영업
-2100,본사,MLB,CNFM0120,MLB_ECFR_STORE,영업(대리상온),영업
-2100,본사,MLB,CNFM0130,MLB_ECOR_STORE,영업(직영오온),영업
+2100,매장,MLB,CNFM0100,MLB_FR_STORE,영업팀(대리상오프),직접
+2100,매장,MLB,CNFM0110,MLB_OR_STORE,영업팀(직영오프),직접
+2100,매장,MLB,CNFM0120,MLB_ECFR_STORE,영업팀(대리상온),직접
+2100,매장,MLB,CNFM0130,MLB_ECOR_STORE,영업팀(직영오온),직접
 2100,본사,MLB,CNFM0170,MLB_MO,유통MD,영업
 2100,플랫폼,MLB,CNZM0001,MM 天猫旗舰店,매장,직접
 2100,플랫폼,MLB,CNZM0002,ML 淘宝奥莱 FO,매장,직접
@@ -80,10 +80,10 @@
 2110,본사,MLB KIDS,CNFI0055,MLB KIDS_BMD,MD,영업
 2110,본사,MLB KIDS,CNFI0080,MLB KIDS_MARKETING,마케팅,영업
 2110,본사,MLB KIDS,CNFI0090,MLB KIDS_INTERIOR,인테리어,영업
-2110,본사,MLB KIDS,CNFI0100,MLB KIDS_FR_STORE,영업(대리상오프),영업
-2110,본사,MLB KIDS,CNFI0110,MLB KIDS_OR_STORE,영업(직영오프),영업
-2110,본사,MLB KIDS,CNFI0120,MLB KIDS_ECFR_STORE,영업(대리상온),영업
-2110,본사,MLB KIDS,CNFI0130,MLB KIDS_ECOR_STORE,영업(직영오온),영업
+2110,매장,MLB KIDS,CNFI0100,MLB KIDS_FR_STORE,영업팀(대리상오프),직접
+2110,매장,MLB KIDS,CNFI0110,MLB KIDS_OR_STORE,영업팀(직영오프),직접
+2110,매장,MLB KIDS,CNFI0120,MLB KIDS_ECFR_STORE,영업팀(대리상온),직접
+2110,매장,MLB KIDS,CNFI0130,MLB KIDS_ECOR_STORE,영업팀(직영오온),직접
 2110,본사,MLB KIDS,CNFI0160,MLB KIDS_INTERIOR,온라인,영업
 2110,본사,MLB KIDS,CNFI0170,MLB KIDS_INTERIOR,인테리어,영업
 2110,매장,MLB KIDS,CNZI0000,MK 上海 久光,매장,직접
@@ -155,3 +155,80 @@
 2500,매장,SUPRA,CNZS0008,SP 上海 宝山万达,매장,직접
 2500,매장,SUPRA,CNZS0009,SP 上海 环球港,매장,직접
 2500,매장,SUPRA,CNZS0010,SP 上海 龙之梦中山公园店,매장,직접
+2110,매장,MLB KIDS,CNZI0006,MK 上海 南丰城,매장,직접
+2100,매장,MLB,CNZM0014,ML 上海 青浦奥莱 POP,매장,직접
+2100,매장,MLB,CNZM0021,ML 太原 杉杉奥莱(AL) FO,매장,직접
+2100,매장,MLB,CNZ80026,ML 南宁 杉杉奥莱(AL) FO,매장,직접
+2110,매장,MLB KIDS,CNZI0018,MK 上海 青浦奥莱 POP,매장,직접
+2100,매장,MLB,CNZ80020,ML 赣州 杉杉奥莱(AL) FO,매장,직접
+2100,매장,MLB,CNZM0032,ML 天津 杉杉奥莱 POP,매장,직접
+2100,매장,MLB,CNZ80023,MM 深圳 杉杉奥莱(AL) FO,매장,직접
+2100,매장,MLB,CNZ80016,ML 上海 佛罗伦萨奥莱 POP,매장,직접
+2110,매장,MLB KIDS,CNZI0011,MK 徐州 杉杉奥莱 FO,매장,직접
+1000,매장,MLB,CNZM0031,ML 深圳 杉杉奥莱 POP,매장,직접
+1000,매장,MLB,CNZ80021,ML 乌鲁木齐 杉杉奥莱(AL) FO,매장,직접
+1000,매장,MLB,CNZ80019,ML 兰州 杉杉奥莱(AL) FO,매장,직접
+2110,매장,MLB KIDS,CNZI0020,MK 宁波 杉井奥莱 FO,매장,직접
+1000,매장,MLB,CNZ80025,ML 衡阳 杉杉奥莱(AL) FO,매장,직접
+1000,매장,MLB,CNZ80018,ML 贵阳 杉杉奥莱(AL) FO,매장,직접
+2110,매장,MLB KIDS,CNZI0010,MK 郑州 杉杉奥莱 FO,매장,직접
+2400,본사,Duvetica,CNFV0020,DUVETICA_MD,MD,영업
+2110,매장,MLB KIDS,CNZI0025,MK 上海 比斯特上海购物村 POP,매장,직접
+1000,본사,MLB,CNFM0015,MLB_WHOLE SALES_南区,Wholesale,영업
+1000,본사,경영지원,CNF00210,Internal Audit,내부감사,영업
+1000,배분계정,MLB,CNF10010,MLB (Distribution),배분계정,X
+1000,배분계정,MLB,CNF20010,MLB ONLINE_人员数,배분계정,X
+1000,배분계정,MLB,CNF20020,MLB OFFLINE_人员数,배분계정,X
+1000,배분계정,MLB,CNFI9900,MLB KIDS_Assessment,배분계정,X
+1000,배분계정,MLB,CNFM9900,MLB_Assessment,배분계정,X
+1000,배분계정,MLB,CNFX9900,Discovery_Assessment,배분계정,X
+2110,플랫폼,MLB KIDS,CNZI0038,MK 抖音儿童旗舰店,매장,직접
+2110,매장,MLB KIDS,CNZI0039,MK 上海 飞洲国际 POP,매장,직접
+2110,매장,MLB KIDS,CNZI0041,MK 天津 天津万象城,매장,직접
+2110,매장,MLB KIDS,CNZI0042,MK 上海 苏河湾万象天地 POP,매장,직접
+1000,매장,MLB,CNZM0004,ML 天津 佛罗伦萨奥莱 POP,매장,직접
+1000,매장,MLB,CNZM0027,ML 上海 杨浦时尚国际奥莱 POP,매장,직접
+2400,플랫폼,Duvetica,CNZV0014,DV 唯品会JITX FO,매장,직접
+2200,매장,Discovery,CNZX0004,DX_EC FR_STORE,영업팀(대리상),직접
+2200,매장,Discovery,CNZX0008,DX 上海 世纪汇,매장,직접
+2200,플랫폼,Discovery,CNZX0009,DX 京东旗舰店,매장,직접
+2200,플랫폼,Discovery,CNZX0010,DX 抖音旗舰店,매장,직접
+1000,조정계정,MLB,CNFM6666,MLB조정,조정계정,X
+2110,조정계정,MLB KIDS,CNFI6666,MK조정,조정계정,X
+2200,조정계정,Discovery,CNFX6666,DX조정,조정계정,X
+2400,조정계정,Duvetica,CNFV6666,DV조정,조정계정,X
+2500,조정계정,SUPRA,CNFS6666,SP조정,조정계정,X
+2500,매장,SUPRA,CNZS0016,SP 上海 荟品仓 POP,매장,직접
+2500,본사,SUPRA,CNFS0050,SUPRA_INTERIOR,인테리어,영업
+1000,본사,MLB,CNFM0160,MLB_Sourcing,소싱,영업
+2400,본사,Duvetica,CNFV0030,DUVETICA_Sales,리테일,영업
+2110,본사,MLB KIDS,CNFI0016,KIDS_WHOLE SALES_北区,Wholesale,영업
+1000,매장,MLB,CNZM0016,ML 上海 比斯特奥莱 POP,,직접
+2400,플랫폼,Duvetica,CNZ80012,매장,,직접
+2110,플랫폼,MLB KIDS,CNZI0024,MK 唯品会JIT FO,,직접
+1000,매장,MLB,CNZM0030,ML 南宁 杉杉奥莱 POP,,직접
+2500,매장,SUPRA,CNZS0006,SP_EC FR_STORE,영업팀(대리상),직접
+2500,본사,SUPRA,CNFS0070,SUPRA_EC,온라인,영업
+2400,본사,Duvetica,CNFV0070,DUVETICA_EC,온라인,영업
+1000,매장,MLB,CNZ80014,MM 上海 POP-UP POP,매장,직접
+2400,매장,Duvetica,CNZV0007,DV_EC FR_STORE,매장,직접
+1000,매장,MLB,CNZM0003,MM 宁波 杉井奥莱 POP,매장,직접
+1000,매장,MLB,CNZM0024,ML 徐州 杉杉奥莱 POP,매장,직접
+1000,매장,MLB,CNZM0025,ML 赣州 杉杉奥莱 POP,매장,직접
+1000,매장,MLB,CNZM0022,ML 贵阳 杉杉奥莱 POP,매장,직접
+1000,본사,MLB,CNFM0060,MLB_EC-OR,온라인,영업
+1000,본사,MLB,CNFM0150,MLB-经销商店北区,Wholesale,영업
+1000,매장,MLB,CNZM0040,ML 上海  宝山万达 POP,매장,직접
+1000,본사,MLB,CNFM0140,MLB-经销商店南区,Wholesale,영업
+2500,매장,SUPRA,CNZS0011,SP 上海 百盛优客 POP,매장,직접
+2500,매장,SUPRA,CNZS0014,SP 上海 杨浦时尚奥莱 FO,매장,직접
+2500,플랫폼,SUPRA,CNZS0013,SP 唯品会JITX FO,매장,직접
+1000,매장,MLB,CNZ80022,ML 重庆 砂之船奥莱 POP,매장,직접
+2500,매장,SUPRA,CNZS0015,SP 南宁 杉杉 FO,매장,직접
+2110,매장,MLB KIDS,CNZI0040,MK 上海 佛罗伦萨奥莱 POP,매장,직접
+2400,매장,Duvetica,CNZV0012,DV 上海 天山百盛优客 POP,매장,직접
+1000,매장,MLB,CNZM0012,ML 上海 百盛优客奥莱 POP,매장,직접
+2110,매장,MLB KIDS,CNZI0012,MK 上海 上海百盛优客 POP,매장,직접
+2400,플랫폼,Duvetica,CNZV0013,DV 唯品会 JIT FO,매장,직접
+2500,플랫폼,SUPRA,CNZS0012,SP 唯品会JIT FO,매장,직접
+1000,매장,MLB,CNZM0046,ML 杉杉奥莱小程序 FO,매장,직접

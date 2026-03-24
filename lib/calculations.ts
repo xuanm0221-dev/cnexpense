@@ -152,13 +152,13 @@ export function getSortedCategories(
 ): string[] {
   const categories = Object.keys(categoryData);
   
-  // 금액이 있는 항목만 필터링
+  // 금액이 0이 아닌 항목만 표시 (음수 상계·환입 등도 행으로 노출)
   const validCategories = categories.filter(category => {
     const monthlyData = categoryData[category];
     const amount = isYTD
       ? calculateYTD(monthlyData, month)
       : getAmountForMonth(monthlyData, month);
-    return amount > 0;
+    return amount !== 0;
   });
   
   // 비용 구분이 지정되지 않으면 금액 순으로 정렬
