@@ -40,6 +40,18 @@ export function calculateYTD(
 }
 
 /**
+ * YTD 구간의 월 개수 (1월~endMonth, endMonth의 월 번호와 동일)
+ * @param endMonth "2026-03" 형식
+ */
+export function getYTDMonthCount(endMonth: string): number {
+  if (!endMonth || typeof endMonth !== 'string') return 1;
+  const parts = endMonth.split('-');
+  const m = parseInt(parts[1] || '1', 10);
+  if (Number.isNaN(m) || m < 1) return 1;
+  return Math.min(12, Math.max(1, m));
+}
+
+/**
  * YoY (Year-over-Year) 계산
  * @param data 월별 금액 데이터
  * @param currentMonth "2025-12" 형식
@@ -81,6 +93,14 @@ export function calculateYoY(
 }
 
 /**
+ * YoY 증감률(pct)을 전년=100 기준 지수%로 표시 (예: pct=16 → 116)
+ */
+export function yoYDeltaToIndexPercent(pct: number | string): number | 'N/A' {
+  if (pct === 'N/A' || typeof pct === 'string') return 'N/A';
+  return 100 + pct;
+}
+
+/**
  * 카테고리별 총합 계산
  * @param categoryData 대분류별 데이터
  * @param month "2024-12" 형식
@@ -106,33 +126,23 @@ export function calculateCategoryTotal(
   return total;
 }
 
-// 대분류 정렬 순서 정의
+// 대분류 정렬 순서 정의 (직접비·영업비 공통, 마스터 대분류와 일치)
+// 홈 대시보드: 인건비(급여)→복리비→광고비→수주회→출장비→나머지(기존 순 유지)
 const DIRECT_COST_ORDER = [
-  '광고선전비',
-  '직접광고비',
   '급여',
   '복리비',
+  '광고비',
+  '수주회',
+  '출장비',
   '플랫폼수수료',
   'TP수수료',
+  '대리상지원금',
+  '지급수수료',
   '임차료',
-  '운송/보관',
-  '감가상각비',
+  '물류비',
   '진열/포장',
-  '용역비',
-  '지급수수료',
-  '출장비',
-  '기타',
-];
-
-const OPERATING_COST_ORDER = [
-  '광고선전비',
-  '급여',
-  '복리비',
-  '임차료',
-  '지급수수료',
-  '용역비',
-  '출장비',
-  '운송/보관',
+  '감가상각비',
+  '세금과공과',
   '기타',
 ];
 
@@ -175,8 +185,8 @@ export function getSortedCategories(
       .map(item => item.category);
   }
   
-  // 지정된 순서대로 정렬
-  const order = costType === '직접비' ? DIRECT_COST_ORDER : OPERATING_COST_ORDER;
+  // 지정된 순서대로 정렬 (직접비·영업비 동일 순서)
+  const order = DIRECT_COST_ORDER;
   
   return validCategories.sort((a, b) => {
     const indexA = order.indexOf(a);
@@ -207,4 +217,46 @@ export function getPreviousYearMonth(currentMonth: string): string {
   const [year, month] = currentMonth.split('-');
   const prevYear = (parseInt(year) - 1).toString();
   return `${prevYear}-${month}`;
+}
+
+/**
+ * 기간 내 어느 달이든 금액이 0이 아닌 대분류만 모아, getSortedCategories와 동일 규칙으로 정렬
+ */
+export function getSortedCategoriesForMonths(
+  categoryData: CategoryData,
+  months: string[],
+  costType?: '직접비' | '영업비'
+): string[] {
+  const categories = Object.keys(categoryData);
+  const validCategories = categories.filter(category => {
+    const monthlyData = categoryData[category];
+    return months.some(m => getAmountForMonth(monthlyData, m) !== 0);
+  });
+
+  if (!costType) {
+    let maxByCat: Record<string, number> = {};
+    for (const category of validCategories) {
+      const monthlyData = categoryData[category];
+      let max = 0;
+      for (const m of months) {
+        const v = getAmountForMonth(monthlyData, m);
+        if (Math.abs(v) > Math.abs(max)) max = v;
+      }
+      maxByCat[category] = max;
+    }
+    return validCategories
+      .map(category => ({ category, amount: maxByCat[category] }))
+      .sort((a, b) => b.amount - a.amount)
+      .map(item => item.category);
+  }
+
+  const order = DIRECT_COST_ORDER;
+  return validCategories.sort((a, b) => {
+    const indexA = order.indexOf(a);
+    const indexB = order.indexOf(b);
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    return a.localeCompare(b, 'ko');
+  });
 }

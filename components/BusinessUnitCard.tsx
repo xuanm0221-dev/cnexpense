@@ -7,7 +7,13 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { BusinessUnitCosts, ViewMode, CostType, MonthlyAmounts } from '@/lib/types';
-import { calculateCategoryTotal, calculateYoY, calculateYTD, getAmountForMonth } from '@/lib/calculations';
+import {
+  calculateCategoryTotal,
+  calculateYoY,
+  calculateYTD,
+  getAmountForMonth,
+  getYTDMonthCount,
+} from '@/lib/calculations';
 import { toThousandCNY } from '@/utils/formatters';
 import CostTypeTabs from './CostTypeTabs';
 
@@ -26,6 +32,10 @@ interface BusinessUnitCardProps {
   retailSalesData?: MonthlyAmounts | null; // 리테일 매출 전체 데이터 (YoY 계산용)
   activeTab?: CostType; // 직접비/영업비/전체 탭 (상위에서 제어 시 모든 카드 동기화)
   onTabChange?: (tab: CostType) => void;
+  salarySubExpanded?: boolean;
+  onSalarySubExpandedChange?: (open: boolean) => void;
+  welfareSubExpanded?: boolean;
+  onWelfareSubExpandedChange?: (open: boolean) => void;
 }
 
 export default function BusinessUnitCard({
@@ -43,8 +53,13 @@ export default function BusinessUnitCard({
   retailSalesData,
   activeTab: externalActiveTab,
   onTabChange,
+  salarySubExpanded,
+  onSalarySubExpandedChange,
+  welfareSubExpanded,
+  onWelfareSubExpandedChange,
 }: BusinessUnitCardProps) {
   const isYTD = viewMode === '누적(YTD)';
+  const ytdMonthCount = getYTDMonthCount(selectedMonth);
   
   // activeTab: 상위에서 전달되면 동기화, 없으면 카드별 독립
   const [internalActiveTab, setInternalActiveTab] = useState<CostType>('전체');
@@ -88,6 +103,36 @@ export default function BusinessUnitCard({
       return total > 0 ? total : null;
     }
   }, [activeTab, storeHeadcount, officeHeadcount]);
+
+  /** 급여 중분류 '인당' 분모: 당월=선택월 스냅샷, YTD=1월~선택월 월별 인원 합 */
+  const salarySubPerPersonDenominator = useMemo(() => {
+    if (isYTD) {
+      if (activeTab === '직접비') {
+        return storeHeadcountData ? calculateYTD(storeHeadcountData, selectedMonth) : 0;
+      }
+      if (activeTab === '영업비') {
+        return officeHeadcountData ? calculateYTD(officeHeadcountData, selectedMonth) : 0;
+      }
+      const officeYtd = officeHeadcountData ? calculateYTD(officeHeadcountData, selectedMonth) : 0;
+      const storeYtd = storeHeadcountData ? calculateYTD(storeHeadcountData, selectedMonth) : 0;
+      return officeYtd + storeYtd;
+    }
+    if (activeTab === '직접비') {
+      return storeHeadcount ?? 0;
+    }
+    if (activeTab === '영업비') {
+      return officeHeadcount ?? 0;
+    }
+    return (officeHeadcount ?? 0) + (storeHeadcount ?? 0);
+  }, [
+    activeTab,
+    isYTD,
+    selectedMonth,
+    officeHeadcountData,
+    storeHeadcountData,
+    officeHeadcount,
+    storeHeadcount,
+  ]);
   
   // 인원수 YoY 계산
   const headcountYoY = useMemo(() => {
@@ -122,90 +167,99 @@ export default function BusinessUnitCard({
     return delta;
   }, [activeTab, selectedMonth, officeHeadcount, storeHeadcount, officeHeadcountData, storeHeadcountData]);
   
-  // 인당 급여 계산
+  // 인당 인건비 계산 (당월: 선택월 인원, YTD: 급여 대분류 합 ÷ 1월~선택월 월별 인원 합)
   const salaryPerPerson = useMemo(() => {
     let salaryTotal = 0;
-    let headcount = 0;
-    
+
     if (activeTab === '직접비') {
       salaryTotal = calculateCategoryTotal(
-        { 급여: data.직접비['급여'] || {} }, 
-        selectedMonth, 
-        isYTD
+        { 급여: data.직접비['급여'] || {} },
+        selectedMonth,
+        isYTD,
       );
-      headcount = storeHeadcount ?? 0;
     } else if (activeTab === '영업비') {
       salaryTotal = calculateCategoryTotal(
-        { 급여: data.영업비['급여'] || {} }, 
-        selectedMonth, 
-        isYTD
+        { 급여: data.영업비['급여'] || {} },
+        selectedMonth,
+        isYTD,
       );
-      headcount = officeHeadcount ?? 0;
     } else {
-      // 전체: 직접비 + 영업비 급여 합계
       const directSalary = calculateCategoryTotal(
-        { 급여: data.직접비['급여'] || {} }, 
-        selectedMonth, 
-        isYTD
+        { 급여: data.직접비['급여'] || {} },
+        selectedMonth,
+        isYTD,
       );
       const operatingSalary = calculateCategoryTotal(
-        { 급여: data.영업비['급여'] || {} }, 
-        selectedMonth, 
-        isYTD
+        { 급여: data.영업비['급여'] || {} },
+        selectedMonth,
+        isYTD,
       );
       salaryTotal = directSalary + operatingSalary;
-      headcount = (officeHeadcount ?? 0) + (storeHeadcount ?? 0);
     }
-    
-    return headcount > 0 ? salaryTotal / headcount : null;
-  }, [activeTab, data, selectedMonth, isYTD, storeHeadcount, officeHeadcount]);
+
+    const denom = salarySubPerPersonDenominator;
+    if (denom <= 0) return null;
+    return salaryTotal / denom;
+  }, [activeTab, data, selectedMonth, isYTD, salarySubPerPersonDenominator]);
   
-  // 인당 급여 YoY 계산
+  // 인당 인건비 YoY 계산 (당월·YTD 모두 동일 분모 규칙으로 전년 동월/동기간 비교)
   const salaryPerPersonYoY = useMemo(() => {
     const [currentYear, month] = selectedMonth.split('-');
     const prevYear = (parseInt(currentYear) - 1).toString();
     const prevMonth = `${prevYear}-${month}`;
-    
+
     let prevSalaryTotal = 0;
-    let prevHeadcount = 0;
-    
+    let prevDenom = 0;
+
     if (activeTab === '직접비') {
       prevSalaryTotal = calculateCategoryTotal(
-        { 급여: data.직접비['급여'] || {} }, 
-        prevMonth, 
-        isYTD
+        { 급여: data.직접비['급여'] || {} },
+        prevMonth,
+        isYTD,
       );
-      prevHeadcount = storeHeadcountData?.[prevMonth] ?? 0;
+      prevDenom = isYTD
+        ? storeHeadcountData
+          ? calculateYTD(storeHeadcountData, prevMonth)
+          : 0
+        : storeHeadcountData?.[prevMonth] ?? 0;
     } else if (activeTab === '영업비') {
       prevSalaryTotal = calculateCategoryTotal(
-        { 급여: data.영업비['급여'] || {} }, 
-        prevMonth, 
-        isYTD
+        { 급여: data.영업비['급여'] || {} },
+        prevMonth,
+        isYTD,
       );
-      prevHeadcount = officeHeadcountData?.[prevMonth] ?? 0;
+      prevDenom = isYTD
+        ? officeHeadcountData
+          ? calculateYTD(officeHeadcountData, prevMonth)
+          : 0
+        : officeHeadcountData?.[prevMonth] ?? 0;
     } else {
-      // 전체: 직접비 + 영업비 급여 합계
       const prevDirectSalary = calculateCategoryTotal(
-        { 급여: data.직접비['급여'] || {} }, 
-        prevMonth, 
-        isYTD
+        { 급여: data.직접비['급여'] || {} },
+        prevMonth,
+        isYTD,
       );
       const prevOperatingSalary = calculateCategoryTotal(
-        { 급여: data.영업비['급여'] || {} }, 
-        prevMonth, 
-        isYTD
+        { 급여: data.영업비['급여'] || {} },
+        prevMonth,
+        isYTD,
       );
       prevSalaryTotal = prevDirectSalary + prevOperatingSalary;
-      const prevOffice = officeHeadcountData?.[prevMonth] ?? 0;
-      const prevStore = storeHeadcountData?.[prevMonth] ?? 0;
-      prevHeadcount = prevOffice + prevStore;
+      if (isYTD) {
+        const o = officeHeadcountData ? calculateYTD(officeHeadcountData, prevMonth) : 0;
+        const s = storeHeadcountData ? calculateYTD(storeHeadcountData, prevMonth) : 0;
+        prevDenom = o + s;
+      } else {
+        prevDenom =
+          (officeHeadcountData?.[prevMonth] ?? 0) + (storeHeadcountData?.[prevMonth] ?? 0);
+      }
     }
-    
-    if (prevHeadcount === 0 || salaryPerPerson === null) {
+
+    if (prevDenom === 0 || salaryPerPerson === null) {
       return null;
     }
-    
-    const prevSalaryPerPerson = prevSalaryTotal / prevHeadcount;
+
+    const prevSalaryPerPerson = prevSalaryTotal / prevDenom;
     const delta = salaryPerPerson - prevSalaryPerPerson;
     return parseFloat((delta / 1000).toFixed(1)); // K 단위로 변환, 소수점 1자리
   }, [activeTab, data, selectedMonth, isYTD, salaryPerPerson, officeHeadcountData, storeHeadcountData]);
@@ -245,8 +299,10 @@ export default function BusinessUnitCard({
       headcount = (officeHeadcount ?? 0) + (storeHeadcount ?? 0);
     }
     
-    return headcount > 0 ? welfareTotal / headcount : null;
-  }, [activeTab, data, selectedMonth, isYTD, storeHeadcount, officeHeadcount]);
+    if (headcount <= 0) return null;
+    const perPerson = welfareTotal / headcount;
+    return isYTD ? perPerson / ytdMonthCount : perPerson;
+  }, [activeTab, data, selectedMonth, isYTD, ytdMonthCount, storeHeadcount, officeHeadcount]);
   
   // 인당 복리비 YoY 계산
   const welfarePerPersonYoY = useMemo(() => {
@@ -293,10 +349,11 @@ export default function BusinessUnitCard({
       return null;
     }
     
-    const prevWelfarePerPerson = prevWelfareTotal / prevHeadcount;
+    const prevRaw = prevWelfareTotal / prevHeadcount;
+    const prevWelfarePerPerson = isYTD ? prevRaw / ytdMonthCount : prevRaw;
     const delta = welfarePerPerson - prevWelfarePerPerson;
     return parseFloat((delta / 1000).toFixed(1)); // K 단위로 변환, 소수점 1자리
-  }, [activeTab, data, selectedMonth, isYTD, welfarePerPerson, officeHeadcountData, storeHeadcountData]);
+  }, [activeTab, data, selectedMonth, isYTD, ytdMonthCount, welfarePerPerson, officeHeadcountData, storeHeadcountData]);
   
   // 리테일 매출 YoY 계산 (K 단위 증감액)
   const retailSalesYoY = useMemo(() => {
@@ -377,82 +434,93 @@ export default function BusinessUnitCard({
   // 색상 매핑
   const colorClasses = {
     blue: {
-      gradient: 'from-blue-500 to-blue-600',
-      light: 'bg-blue-50',
-      text: 'text-blue-700',
-      button: 'bg-blue-500 hover:bg-blue-600',
-      yoyBox: 'bg-blue-400',
+      gradient: 'from-indigo-600 via-blue-600 to-blue-500',
+      light: 'bg-blue-50/70',
+      text: 'text-blue-800',
+      button: 'bg-blue-600 hover:bg-blue-700 shadow-[0_10px_24px_rgba(37,99,235,0.22)]',
+      yoyBox: 'bg-white/18 border border-white/15 backdrop-blur-[2px]',
     },
     yellow: {
-      gradient: 'from-yellow-500 to-yellow-600',
-      light: 'bg-yellow-50',
-      text: 'text-yellow-700',
-      button: 'bg-yellow-500 hover:bg-yellow-600',
-      yoyBox: 'bg-yellow-400',
+      gradient: 'from-amber-600 via-yellow-500 to-amber-400',
+      light: 'bg-amber-50/75',
+      text: 'text-amber-800',
+      button: 'bg-amber-500 hover:bg-amber-600 shadow-[0_10px_24px_rgba(217,119,6,0.22)]',
+      yoyBox: 'bg-white/18 border border-white/15 backdrop-blur-[2px]',
     },
     green: {
-      gradient: 'from-green-500 to-green-600',
-      light: 'bg-green-50',
-      text: 'text-green-700',
-      button: 'bg-green-500 hover:bg-green-600',
-      yoyBox: 'bg-green-400',
+      gradient: 'from-emerald-600 via-green-600 to-emerald-500',
+      light: 'bg-emerald-50/75',
+      text: 'text-emerald-800',
+      button: 'bg-emerald-600 hover:bg-emerald-700 shadow-[0_10px_24px_rgba(5,150,105,0.22)]',
+      yoyBox: 'bg-white/18 border border-white/15 backdrop-blur-[2px]',
     },
     gray: {
-      gradient: 'from-gray-600 to-gray-700',
-      light: 'bg-gray-50',
-      text: 'text-gray-700',
-      button: 'bg-gray-600 hover:bg-gray-700',
-      yoyBox: 'bg-gray-500',
+      gradient: 'from-slate-800 via-slate-700 to-slate-600',
+      light: 'bg-slate-50/80',
+      text: 'text-slate-800',
+      button: 'bg-slate-700 hover:bg-slate-800 shadow-[0_10px_24px_rgba(51,65,85,0.22)]',
+      yoyBox: 'bg-white/14 border border-white/12 backdrop-blur-[2px]',
     },
     purple: {
-      gradient: 'from-purple-600 to-purple-700',
-      light: 'bg-purple-50',
-      text: 'text-purple-700',
-      button: 'bg-purple-600 hover:bg-purple-700',
-      yoyBox: 'bg-purple-500',
+      gradient: 'from-violet-700 via-purple-600 to-fuchsia-600',
+      light: 'bg-violet-50/75',
+      text: 'text-violet-800',
+      button: 'bg-violet-600 hover:bg-violet-700 shadow-[0_10px_24px_rgba(124,58,237,0.24)]',
+      yoyBox: 'bg-white/18 border border-white/15 backdrop-blur-[2px]',
     },
   };
   
   const colors = colorClasses[color as keyof typeof colorClasses] || colorClasses.gray;
   
   return (
-    <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-      {/* 헤더 (그라데이션) */}
-      <div className={`bg-gradient-to-r ${colors.gradient} p-6 text-white`}>
-        <h2 className="text-xl font-bold mb-4">{name}</h2>
+    <div className="bg-white rounded-2xl shadow-[0_16px_40px_rgba(15,23,42,0.10)] border border-slate-200/80 ring-1 ring-white/70 overflow-visible">
+      {/* 헤더 (그라데이션) — 상단 모서리만 클립 */}
+      <div className={`rounded-t-2xl overflow-hidden bg-gradient-to-r ${colors.gradient} p-4 sm:p-6 text-white shadow-inner`}>
+        <h2 className="text-lg sm:text-xl font-bold tracking-[-0.02em] mb-3 sm:mb-4">{name}</h2>
         
-        {/* YoY 표시 */}
-        <div className="flex gap-4">
-          {/* 리테일매출 YOY */}
-          {retailSalesYoYPercent !== null && (
-            <div className={`px-4 py-2 ${colors.yoyBox} rounded-lg text-white`}>
-              <div className="text-xs opacity-90">리테일매출 YOY</div>
-              <div className="text-2xl font-bold">{retailSalesYoYPercent}%</div>
+        {/* 요약: 총비용 | 리테일매출 YOY | 비용 YOY (한 줄 컴팩트) */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 min-w-0">
+          <div
+            className={`px-1.5 py-1.5 sm:px-2 sm:py-2 ${colors.yoyBox} rounded-xl text-white min-w-0 [container-type:inline-size] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]`}
+          >
+            <div className="text-[7px] sm:text-[8px] opacity-85 leading-none mb-0.5 truncate tracking-[0.02em]">
+              총비용
             </div>
-          )}
-          
-          {/* 비용 YOY (탭에 따라 변경) */}
-          {totalYoY.pct !== 'N/A' && (
-            <div className={`px-4 py-2 ${colors.yoyBox} rounded-lg text-white`}>
-              <div className="text-xs opacity-90">비용 YOY</div>
-              <div className="text-2xl font-bold">{totalYoY.pct}%</div>
+            <div className="text-[clamp(16px,16cqi+8px,22px)] sm:text-[clamp(17px,14cqi+8px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
+              {toThousandCNY(displayTotalCost)}
             </div>
-          )}
+          </div>
+          <div
+            className={`px-1.5 py-1.5 sm:px-2 sm:py-2 ${colors.yoyBox} rounded-xl text-white min-w-0 [container-type:inline-size] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] ${
+              retailSalesYoYPercent === null ? 'opacity-75' : ''
+            }`}
+          >
+            <div className="text-[7px] sm:text-[8px] opacity-85 leading-none mb-0.5 truncate tracking-[0.02em]">
+              리테일 YOY
+            </div>
+            <div className="text-[clamp(16px,16cqi+8px,22px)] sm:text-[clamp(17px,14cqi+8px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
+              {retailSalesYoYPercent !== null ? `${retailSalesYoYPercent}%` : '—'}
+            </div>
+          </div>
+          <div
+            className={`px-1.5 py-1.5 sm:px-2 sm:py-2 ${colors.yoyBox} rounded-xl text-white min-w-0 [container-type:inline-size] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] ${
+              totalYoY.pct === 'N/A' ? 'opacity-75' : ''
+            }`}
+          >
+            <div className="text-[7px] sm:text-[8px] opacity-85 leading-none mb-0.5 truncate tracking-[0.02em]">
+              비용 YOY
+            </div>
+            <div className="text-[clamp(16px,16cqi+8px,22px)] sm:text-[clamp(17px,14cqi+8px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
+              {totalYoY.pct !== 'N/A' ? `${totalYoY.pct}%` : '—'}
+            </div>
+          </div>
         </div>
       </div>
       
-      {/* 본문 */}
-      <div className="p-6">
-        {/* 총 비용 */}
-        <div className="mb-4">
-          <div className={`text-4xl font-bold ${colors.text}`}>
-            {toThousandCNY(displayTotalCost)}
-          </div>
-          <div className="text-sm text-gray-500 mt-1">총 비용</div>
-        </div>
-        
+      {/* 본문 — 하단 모서리 (sticky 헤더가 뷰포트에 붙을 수 있도록 루트는 overflow-visible) */}
+      <div className="p-4 sm:p-6 rounded-b-2xl bg-gradient-to-b from-white to-slate-50/35">
         {/* 영업비율, 인원수, 리테일매출 등 (향후 확장용) */}
-        <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-4 text-xs sm:text-sm rounded-xl border border-slate-200/70 bg-white/80 px-3 py-2.5 shadow-sm shadow-slate-200/40">
           <div>
             <div className="text-gray-500">비용률</div>
             <div className="font-semibold text-gray-800">
@@ -493,12 +561,10 @@ export default function BusinessUnitCard({
           </div>
         </div>
         
-        <hr className="my-4" />
-        
-        {/* 인당 급여 / 인당 복리비 */}
-        <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+        {/* 인당 인건비 / 인당 복리비 */}
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 mb-3 sm:mb-4 text-xs sm:text-sm rounded-xl border border-slate-200/70 bg-white/80 px-3 py-2.5 shadow-sm shadow-slate-200/40">
           <div>
-            <div className="text-gray-500">인당 급여</div>
+            <div className="text-gray-500">인당 인건비</div>
             <div className="font-semibold text-gray-800">
               {salaryPerPerson !== null && salaryPerPerson !== undefined
                 ? (
@@ -537,17 +603,24 @@ export default function BusinessUnitCard({
         <CostTypeTabs
           directCosts={data.직접비}
           operatingCosts={data.영업비}
+          salarySub={data.급여중분류}
+          welfareSub={data.복리중분류}
           selectedMonth={selectedMonth}
           viewMode={viewMode}
           color={color}
           activeTab={activeTab}
           onTabChange={setActiveTab}
+          salarySubExpanded={salarySubExpanded}
+          onSalarySubExpandedChange={onSalarySubExpandedChange}
+          welfareSubExpanded={welfareSubExpanded}
+          onWelfareSubExpandedChange={onWelfareSubExpandedChange}
+          salaryPerPersonDenominator={salarySubPerPersonDenominator}
         />
         
         {/* 전체 대시보드 보기 버튼 */}
         <Link href={`/cost/${id}`}>
           <button
-            className={`w-full mt-6 py-3 rounded-lg text-white font-medium transition-colors ${colors.button}`}
+            className={`w-full mt-4 sm:mt-6 py-2.5 sm:py-3 text-sm sm:text-base rounded-xl text-white font-semibold tracking-[-0.01em] transition-all ${colors.button}`}
           >
             전체 대시보드 보기 &gt;
           </button>

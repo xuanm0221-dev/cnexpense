@@ -12,10 +12,37 @@ export interface CategoryData {
   [category: string]: MonthlyAmounts; // "급여": { "2024-01": 12345678 }
 }
 
+// 급여 중분류(기본급·성과급 등) 월별 금액
+export type SalarySubcategoryBuckets = Record<string, MonthlyAmounts>;
+
+/** 대분류 → G/L 계정 설명 → 월별 금액 */
+export type GlBreakdownByCategory = Record<string, Record<string, MonthlyAmounts>>;
+
+/** 복리비 L2(중분류) + 현지직원 L3(세부) — 직접비·영업비 각각 */
+export interface WelfareBreakdownSide {
+  중분류: Record<string, MonthlyAmounts>;
+  현지직원세부: Record<string, MonthlyAmounts>;
+}
+
 // 사업부별 데이터 (직접비/영업비)
 export interface BusinessUnitCosts {
   직접비: CategoryData;
   영업비: CategoryData;
+  /** 전처리에서 채움: 직접/영업별 급여 세부 버킷 */
+  급여중분류?: {
+    직접비: SalarySubcategoryBuckets;
+    영업비: SalarySubcategoryBuckets;
+  };
+  /** 전처리에서 채움: 복리비 L2/L3 (G/L 계정 설명 기준) */
+  복리중분류?: {
+    직접비: WelfareBreakdownSide;
+    영업비: WelfareBreakdownSide;
+  };
+  /** 대분류별 G/L 계정 설명(전표) 기준 월별 금액 — 계층 표 펼침용 */
+  대분류별GL설명?: {
+    직접비: GlBreakdownByCategory;
+    영업비: GlBreakdownByCategory;
+  };
 }
 
 // 전체 비용 데이터

@@ -8,6 +8,14 @@ import { useState, useEffect, useMemo } from 'react';
 import DashboardHeader from '@/components/DashboardHeader';
 import BusinessUnitCard from '@/components/BusinessUnitCard';
 import { CostData, ViewMode, CostType, BUSINESS_UNITS, HeadcountData, StoreHeadcountData, RetailSalesData } from '@/lib/types';
+import {
+  CORPORATE_BUSINESS_UNIT_IDS,
+  mergeCorporateBusinessUnitCosts,
+} from '@/lib/corporate-cost-merge';
+import {
+  buildCorporateRetailSalesByMonth,
+  sumCorporateRetailSales,
+} from '@/lib/corporate-retail';
 import { loadCostData, isDataEmpty, loadHeadcountData, loadStoreHeadcountData, loadRetailSalesData } from '@/lib/data-loader';
 
 export default function HomePage() {
@@ -29,6 +37,10 @@ export default function HomePage() {
   
   // 직접비/영업비/전체 탭 (모든 카드 동기화)
   const [activeTab, setActiveTab] = useState<CostType>('전체');
+
+  // 급여·복리비 중분류 토글 (모든 카드 동기화)
+  const [salarySubExpanded, setSalarySubExpanded] = useState(false);
+  const [welfareSubExpanded, setWelfareSubExpanded] = useState(false);
   
   // 데이터 로드 (초기 로드)
   useEffect(() => {
@@ -117,6 +129,16 @@ export default function HomePage() {
     if (!retailSalesData || !retailSalesData[buId]) return null;
     return retailSalesData[buId];
   };
+
+  const corporateRetailSalesMemo = useMemo(() => {
+    if (!retailSalesData || !selectedMonth) return null;
+    return sumCorporateRetailSales(retailSalesData, selectedMonth);
+  }, [retailSalesData, selectedMonth]);
+
+  const corporateRetailSalesDataMemo = useMemo(
+    () => buildCorporateRetailSalesByMonth(retailSalesData),
+    [retailSalesData]
+  );
   
   // 로딩 상태
   if (loading) {
@@ -172,53 +194,18 @@ export default function HomePage() {
         viewMode={viewMode}
         onMonthChange={setSelectedMonth}
         onViewModeChange={setViewMode}
+        showOtherBU={showOtherBU}
+        onToggleOtherBU={() => setShowOtherBU(!showOtherBU)}
       />
       
       {/* 사업부 카드 그리드 */}
-      <div className="max-w-[1920px] mx-auto px-2 py-6">
-        {/* 토글 버튼 */}
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={() => setShowOtherBU(!showOtherBU)}
-            className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700"
-          >
-            {showOtherBU ? '기타 사업부 숨기기 ▲' : '기타 사업부 보기 ▼'}
-          </button>
-        </div>
-        
-        <div className={`grid ${showOtherBU ? 'grid-cols-7' : 'grid-cols-5'} gap-6`}>
+      <div className="max-w-[min(100vw,2400px)] mx-auto px-2 py-6">
+        <div className={`grid ${showOtherBU ? 'grid-cols-7' : 'grid-cols-5'} gap-5`}>
           {/* 법인 카드 (6개 합계) */}
           {(() => {
-            // 6개 사업부 합계 계산
-            const corporateData: any = { 직접비: {}, 영업비: {} };
-            const buIds = ['MLB', 'MLB KIDS', 'Discovery', '경영지원', 'Duvetica', 'SUPRA'];
-            
-            buIds.forEach(buId => {
-              const buData = data.data[buId];
-              if (buData) {
-                // 직접비 합산
-                for (const category in buData.직접비) {
-                  if (!corporateData.직접비[category]) {
-                    corporateData.직접비[category] = {};
-                  }
-                  for (const month in buData.직접비[category]) {
-                    corporateData.직접비[category][month] = 
-                      (corporateData.직접비[category][month] || 0) + buData.직접비[category][month];
-                  }
-                }
-                // 영업비 합산
-                for (const category in buData.영업비) {
-                  if (!corporateData.영업비[category]) {
-                    corporateData.영업비[category] = {};
-                  }
-                  for (const month in buData.영업비[category]) {
-                    corporateData.영업비[category][month] = 
-                      (corporateData.영업비[category][month] || 0) + buData.영업비[category][month];
-                  }
-                }
-              }
-            });
-            
+            const buIds = [...CORPORATE_BUSINESS_UNIT_IDS];
+            const corporateCardData = mergeCorporateBusinessUnitCosts(data.data);
+
             // 법인 사무실 인원수 합산 (모든 사업부 포함)
             const corporateOfficeHeadcount = (() => {
               let total = 0;
@@ -274,52 +261,28 @@ export default function HomePage() {
               });
               return Object.keys(result).length > 0 ? result : null;
             })();
-            
-            // 법인 리테일 매출 합산 (모든 브랜드 합계, 경영지원 제외)
-            const corporateRetailSales = (() => {
-              let total = 0;
-              let hasData = false;
-              buIds.filter(buId => buId !== '경영지원').forEach(buId => {
-                const sales = getRetailSales(buId, selectedMonth);
-                if (sales !== null) {
-                  total += sales;
-                  hasData = true;
-                }
-              });
-              return hasData ? total : null;
-            })();
-            
-            // 법인 리테일 매출 전체 데이터 (YoY 계산용, 경영지원 제외)
-            const corporateRetailSalesData = (() => {
-              const result: { [month: string]: number } = {};
-              buIds.filter(buId => buId !== '경영지원').forEach(buId => {
-                const buData = getRetailSalesData(buId);
-                if (buData) {
-                  Object.keys(buData).forEach(month => {
-                    result[month] = (result[month] || 0) + buData[month];
-                  });
-                }
-              });
-              return Object.keys(result).length > 0 ? result : null;
-            })();
-            
+
             return (
               <BusinessUnitCard
                 key="법인"
                 id="법인"
                 name="법인"
                 color="purple"
-                data={corporateData}
+                data={corporateCardData}
                 selectedMonth={selectedMonth}
                 viewMode={viewMode}
                 officeHeadcount={corporateOfficeHeadcount}
                 storeHeadcount={corporateStoreHeadcount}
                 officeHeadcountData={corporateOfficeHeadcountData}
                 storeHeadcountData={corporateStoreHeadcountData}
-                retailSales={corporateRetailSales}
-                retailSalesData={corporateRetailSalesData}
+                retailSales={corporateRetailSalesMemo}
+                retailSalesData={corporateRetailSalesDataMemo}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
+                salarySubExpanded={salarySubExpanded}
+                onSalarySubExpandedChange={setSalarySubExpanded}
+                welfareSubExpanded={welfareSubExpanded}
+                onWelfareSubExpandedChange={setWelfareSubExpanded}
               />
             );
           })()}
@@ -356,10 +319,22 @@ export default function HomePage() {
                 storeHeadcount={getStoreHeadcount(bu.id, selectedMonth)}
                 officeHeadcountData={headcountData?.[bu.id] || null}
                 storeHeadcountData={storeHeadcountData?.[bu.id] || null}
-                retailSales={getRetailSales(bu.id, selectedMonth)}
-                retailSalesData={getRetailSalesData(bu.id)}
+                retailSales={
+                  bu.id === '경영지원'
+                    ? corporateRetailSalesMemo
+                    : getRetailSales(bu.id, selectedMonth)
+                }
+                retailSalesData={
+                  bu.id === '경영지원'
+                    ? corporateRetailSalesDataMemo
+                    : getRetailSalesData(bu.id)
+                }
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
+                salarySubExpanded={salarySubExpanded}
+                onSalarySubExpandedChange={setSalarySubExpanded}
+                welfareSubExpanded={welfareSubExpanded}
+                onWelfareSubExpandedChange={setWelfareSubExpanded}
               />
             );
           })}
@@ -400,6 +375,10 @@ export default function HomePage() {
                 retailSalesData={getRetailSalesData(bu.id)}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
+                salarySubExpanded={salarySubExpanded}
+                onSalarySubExpandedChange={setSalarySubExpanded}
+                welfareSubExpanded={welfareSubExpanded}
+                onWelfareSubExpandedChange={setWelfareSubExpanded}
               />
             );
           })}

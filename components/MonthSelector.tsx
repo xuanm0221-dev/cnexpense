@@ -37,9 +37,9 @@ export default function MonthSelector({
   
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-300 px-3 py-2">
+      <div className="flex items-center gap-1.5 bg-white/95 rounded-xl border border-slate-300 px-3 py-2 shadow-sm shadow-slate-200/40">
         <svg
-          className="w-5 h-5 text-gray-500"
+          className="w-5 h-5 text-slate-500"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -55,7 +55,7 @@ export default function MonthSelector({
         <select
           value={currentYear}
           onChange={handleYearChange}
-          className="border-none bg-transparent text-sm font-medium focus:outline-none focus:ring-0"
+          className="border-none bg-transparent text-sm font-semibold text-slate-800 focus:outline-none focus:ring-0"
         >
           {years.map(year => (
             <option key={year} value={year}>
@@ -67,7 +67,7 @@ export default function MonthSelector({
         <select
           value={currentMonth}
           onChange={handleMonthChange}
-          className="border-none bg-transparent text-sm font-medium focus:outline-none focus:ring-0"
+          className="border-none bg-transparent text-sm font-semibold text-slate-800 focus:outline-none focus:ring-0"
         >
           {availableMonths.map(month => (
             <option key={month} value={month}>
