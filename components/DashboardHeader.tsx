@@ -21,6 +21,8 @@ interface DashboardHeaderProps {
   viewMode: ViewMode;
   onMonthChange: (month: string) => void;
   onViewModeChange: (mode: ViewMode) => void;
+  showOtherBU: boolean;
+  onToggleOtherBU: () => void;
 }
 
 export default function DashboardHeader({
@@ -29,6 +31,8 @@ export default function DashboardHeader({
   viewMode,
   onMonthChange,
   onViewModeChange,
+  showOtherBU,
+  onToggleOtherBU,
 }: DashboardHeaderProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -43,8 +47,8 @@ export default function DashboardHeader({
   };
 
   return (
-    <div className="bg-white border-b border-gray-200 px-2 py-4">
-      <div className="max-w-[1920px] mx-auto">
+    <div className="bg-gradient-to-b from-white to-slate-50/90 border-b border-slate-200/80 px-2 py-4">
+      <div className="max-w-[min(100vw,2400px)] mx-auto">
         {/* 제목 (가운데 정렬) */}
         <div className="flex items-center justify-center mb-6">
           <div className="flex items-center gap-3">
@@ -70,28 +74,32 @@ export default function DashboardHeader({
         </div>
         
         {/* 탭과 월 선택 */}
-        <div className="flex items-center gap-6 border-b border-gray-200">
+        <div className="flex items-center gap-5 border-b border-slate-200/80">
           {/* 당월 / 누적(YTD) 탭 */}
-          <button
-            onClick={() => onViewModeChange('당월')}
-            className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${
-              viewMode === '당월'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            당월
-          </button>
-          <button
-            onClick={() => onViewModeChange('누적(YTD)')}
-            className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${
-              viewMode === '누적(YTD)'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            누적(YTD)
-          </button>
+          <div className="pb-3">
+            <div className="inline-flex items-center rounded-xl bg-slate-100/90 p-1 ring-1 ring-slate-200/80 shadow-sm shadow-slate-200/40">
+              <button
+                onClick={() => onViewModeChange('당월')}
+                className={`px-3.5 py-1.5 text-sm font-semibold rounded-lg transition-all ${
+                  viewMode === '당월'
+                    ? 'bg-white text-blue-600 shadow-sm shadow-slate-200/60'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                당월
+              </button>
+              <button
+                onClick={() => onViewModeChange('누적(YTD)')}
+                className={`px-3.5 py-1.5 text-sm font-semibold rounded-lg transition-all ${
+                  viewMode === '누적(YTD)'
+                    ? 'bg-white text-blue-600 shadow-sm shadow-slate-200/60'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                누적(YTD)
+              </button>
+            </div>
+          </div>
           
           {/* 월 선택 (누적 바로 옆) */}
           <div className="pb-3">
@@ -101,8 +109,18 @@ export default function DashboardHeader({
               onChange={onMonthChange}
             />
           </div>
+
+          <div className="pb-3">
+            <button
+              type="button"
+              onClick={onToggleOtherBU}
+              className="px-4 py-2 bg-white/95 border border-slate-300 rounded-xl hover:bg-slate-50 transition-all text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40"
+            >
+              {showOtherBU ? '기타 사업부 숨기기 ▲' : '기타 사업부 보기 ▼'}
+            </button>
+          </div>
           
-          {/* 전처리 명령 버튼 (월 선택 우측) */}
+          {/* 전처리 명령 버튼 (우측 정렬) */}
           <div className="pb-3 ml-auto flex items-center gap-2">
             <span className="text-xs text-gray-400 mr-2">전처리:</span>
             <button

@@ -271,6 +271,190 @@ def filter_target_business_units(df):
     return df
 
 
+def _assign_salary_sub_bucket(row):
+    """G/L 계정 설명·텍스트 기준 급여 중분류 (우선순위: 퇴직 → 노무비 → 인건비+키워드)"""
+    gl = str(row.get('G/L 계정 설명', '') or '').strip()
+    text = str(row.get('텍스트', '') or '')
+    if gl == '퇴직급여':
+        return '퇴직급여'
+    if gl == '노무비':
+        return '외주/PT'
+    if gl == '인건비':
+        if '董事长' in text:
+            return 'Red Pack'
+        if '奖金' in text:
+            return '성과급'
+        if '工资' in text:
+            return '기본급'
+    return None
+
+
+def aggregate_salary_subcategories(df):
+    """대분류=급여만, aggregate_data와 동일한 직접/영업 부여 후 G/L·텍스트로 중분류. 잔액=미정."""
+    if df.empty:
+        return None
+    if 'G/L 계정 설명' not in df.columns or '텍스트' not in df.columns:
+        print("  [주의] 급여중분류: G/L 계정 설명 또는 텍스트 컬럼 없음 — 스킵")
+        return None
+    # --- aggregate_data()와 동일한 직접/영업 구분 (기존 로직 복제, 이후에만 중분류 적용) ---
+    if '영업/직접' in df.columns:
+        cc_col = '영업/직접'
+    else:
+        cc_col = '영업비/직접비'
+    cc_norm = df[cc_col].replace({'영업': '영업비', '직접': '직접비'})
+    df = df.copy()
+    if '직접/영업' in df.columns:
+        acc_stripped = df['직접/영업'].fillna('').astype(str).str.strip()
+        is_ob = acc_stripped.isin(['영업', '영업비'])
+        is_db = acc_stripped.isin(['직접', '직접비'])
+        df['_집계비용구분'] = np.where(is_ob, '영업비', np.where(is_db, '직접비', cc_norm))
+    else:
+        df['_집계비용구분'] = cc_norm
+    # --- 여기부터 급여 중분류(추가) ---
+    salary = df[df['대분류'] == '급여'].copy()
+    if salary.empty:
+        return None
+    salary['_sb'] = salary.apply(_assign_salary_sub_bucket, axis=1)
+    known = salary[salary['_sb'].notna()]
+    if known.empty:
+        known_sums = pd.Series(dtype='float64')
+    else:
+        known_sums = known.groupby(['연월', '사업부', '_집계비용구분'])['금액(전표 통화)'].sum()
+    total_by = salary.groupby(['연월', '사업부', '_집계비용구분'])['금액(전표 통화)'].sum()
+    nested = {
+        bu: {"직접비": {}, "영업비": {}}
+        for bu in TARGET_BUSINESS_UNITS
+    }
+    if not known.empty:
+        g = known.groupby(['연월', '사업부', '_집계비용구분', '_sb'])['금액(전표 통화)'].sum()
+        for key, amt in g.items():
+            ym, bu, ct_raw, label = key
+            if bu not in nested:
+                continue
+            ct = '직접비' if ct_raw == '직접비' else '영업비'
+            if label not in nested[bu][ct]:
+                nested[bu][ct][label] = {}
+            nested[bu][ct][label][ym] = int(amt)
+    for key, tot in total_by.items():
+        ym, bu, ct_raw = key
+        if bu not in nested:
+            continue
+        ct = '직접비' if ct_raw == '직접비' else '영업비'
+        t = int(tot)
+        try:
+            sk = int(known_sums[key]) if key in known_sums.index else 0
+        except (TypeError, KeyError):
+            sk = 0
+        rem = t - sk
+        if rem != 0:
+            if '미정' not in nested[bu][ct]:
+                nested[bu][ct]['미정'] = {}
+            nested[bu][ct]['미정'][ym] = nested[bu][ct]['미정'].get(ym, 0) + rem
+    return nested
+
+
+WELFARE_INSURANCE_GLS = frozenset({
+    '복리후생비_공적금',
+    '복리후생비_사회보험',
+    '복리후생비_직영점사회보험및공적금',
+})
+WELFARE_EXPAT_GL = '복리후생비_외국인직원복리'
+WELFARE_GL_PREFIX = '복리후생비_'
+
+
+def _assign_welfare_l2_bucket(gl_raw):
+    gl = str(gl_raw or '').strip()
+    if gl in WELFARE_INSURANCE_GLS:
+        return '보험/공적금'
+    if gl == WELFARE_EXPAT_GL:
+        return '주재원'
+    return '현지직원'
+
+
+def _welfare_local_display_label(gl_raw):
+    gl = str(gl_raw or '').strip()
+    if gl.startswith(WELFARE_GL_PREFIX):
+        rest = gl[len(WELFARE_GL_PREFIX):]
+        return rest if rest else '기타'
+    return gl if gl else '기타'
+
+
+def aggregate_welfare_subcategories(df):
+    """대분류=복리비만, aggregate_data와 동일 직접/영업 구분 후 G/L 기준 L2·L3(현지직원만 세부)."""
+    if df.empty:
+        return None
+    if 'G/L 계정 설명' not in df.columns:
+        print("  [주의] 복리중분류: G/L 계정 설명 컬럼 없음 — 스킵")
+        return None
+    if '영업/직접' in df.columns:
+        cc_col = '영업/직접'
+    else:
+        cc_col = '영업비/직접비'
+    cc_norm = df[cc_col].replace({'영업': '영업비', '직접': '직접비'})
+    df = df.copy()
+    if '직접/영업' in df.columns:
+        acc_stripped = df['직접/영업'].fillna('').astype(str).str.strip()
+        is_ob = acc_stripped.isin(['영업', '영업비'])
+        is_db = acc_stripped.isin(['직접', '직접비'])
+        df['_집계비용구분'] = np.where(is_ob, '영업비', np.where(is_db, '직접비', cc_norm))
+    else:
+        df['_집계비용구분'] = cc_norm
+
+    welfare = df[df['대분류'] == '복리비'].copy()
+    if welfare.empty:
+        return None
+
+    welfare['_wl2'] = welfare['G/L 계정 설명'].map(_assign_welfare_l2_bucket)
+    welfare['_wl3'] = welfare.apply(
+        lambda r: _welfare_local_display_label(r['G/L 계정 설명'])
+        if r['_wl2'] == '현지직원' else None,
+        axis=1,
+    )
+
+    nested = {
+        bu: {
+            "직접비": {"중분류": {}, "현지직원세부": {}},
+            "영업비": {"중분류": {}, "현지직원세부": {}},
+        }
+        for bu in TARGET_BUSINESS_UNITS
+    }
+
+    g2 = welfare.groupby(['연월', '사업부', '_집계비용구분', '_wl2'])['금액(전표 통화)'].sum()
+    for key, amt in g2.items():
+        ym, bu, ct_raw, l2 = key
+        if bu not in nested:
+            continue
+        ct = '직접비' if ct_raw == '직접비' else '영업비'
+        if l2 not in nested[bu][ct]['중분류']:
+            nested[bu][ct]['중분류'][l2] = {}
+        nested[bu][ct]['중분류'][l2][ym] = int(amt)
+
+    local_only = welfare[welfare['_wl2'] == '현지직원']
+    if not local_only.empty:
+        g3 = local_only.groupby(
+            ['연월', '사업부', '_집계비용구분', '_wl3']
+        )['금액(전표 통화)'].sum()
+        for key, amt in g3.items():
+            ym, bu, ct_raw, l3 = key
+            if bu not in nested:
+                continue
+            ct = '직접비' if ct_raw == '직접비' else '영업비'
+            if l3 not in nested[bu][ct]['현지직원세부']:
+                nested[bu][ct]['현지직원세부'][l3] = {}
+            nested[bu][ct]['현지직원세부'][l3][ym] = int(amt)
+
+    out = {}
+    for bu in TARGET_BUSINESS_UNITS:
+        has_any = False
+        for ct in ('직접비', '영업비'):
+            if nested[bu][ct]['중분류'] or nested[bu][ct]['현지직원세부']:
+                has_any = True
+                break
+        if has_any:
+            out[bu] = nested[bu]
+    return out if out else None
+
+
 def aggregate_data(df):
     """데이터 집계"""
     print("\n[6/8] 데이터 집계 중...")
@@ -305,8 +489,57 @@ def aggregate_data(df):
     return grouped
 
 
-def convert_to_hierarchical_json(aggregated_df, months):
-    """계층적 JSON 구조로 변환"""
+def aggregate_gl_by_category(df):
+    """
+    aggregate_data()와 동일한 직접/영업 구분으로 대분류·G/L 계정 설명별 월별 집계.
+    반환: 연월, 사업부, 비용구분, 대분류, gl설명, 금액
+    """
+    if df.empty:
+        return pd.DataFrame(
+            columns=['연월', '사업부', '비용구분', '대분류', 'gl설명', '금액']
+        )
+    if 'G/L 계정 설명' not in df.columns:
+        print("  [주의] 대분류별GL설명: G/L 계정 설명 컬럼 없음 — 스킵")
+        return pd.DataFrame(
+            columns=['연월', '사업부', '비용구분', '대분류', 'gl설명', '금액']
+        )
+
+    if '영업/직접' in df.columns:
+        cc_col = '영업/직접'
+    else:
+        cc_col = '영업비/직접비'
+    cc_norm = df[cc_col].replace({'영업': '영업비', '직접': '직접비'})
+
+    d = df.copy()
+    if '직접/영업' in d.columns:
+        acc_stripped = d['직접/영업'].fillna('').astype(str).str.strip()
+        is_ob = acc_stripped.isin(['영업', '영업비'])
+        is_db = acc_stripped.isin(['직접', '직접비'])
+        d['_집계비용구분'] = np.where(is_ob, '영업비', np.where(is_db, '직접비', cc_norm))
+    else:
+        d['_집계비용구분'] = cc_norm
+
+    d['_gl'] = d['G/L 계정 설명'].fillna('').astype(str).str.strip()
+    d.loc[d['_gl'] == '', '_gl'] = '(미지정)'
+
+    grouped = d.groupby(
+        ['연월', '사업부', '_집계비용구분', '대분류', '_gl'],
+        observed=False,
+    ).agg({'금액(전표 통화)': 'sum'}).reset_index()
+    grouped.columns = ['연월', '사업부', '비용구분', '대분류', 'gl설명', '금액']
+
+    print(f"  - G/L·대분류 집계 완료: {len(grouped)}개 그룹")
+    return grouped
+
+
+def convert_to_hierarchical_json(
+    aggregated_df,
+    months,
+    salary_breakdown=None,
+    welfare_breakdown=None,
+    gl_aggregated_df=None,
+):
+    """계층적 JSON 변환. salary_breakdown / welfare_breakdown: 중분류 집계 결과."""
     print("\n[7/8] JSON 변환 중...")
     
     result = {
@@ -344,7 +577,30 @@ def convert_to_hierarchical_json(aggregated_df, months):
                     monthly_amounts[month] = amount
                 
                 result["data"][bu][cost_type][category] = monthly_amounts
-    
+        
+        if salary_breakdown and bu in salary_breakdown:
+            result["data"][bu]["급여중분류"] = salary_breakdown[bu]
+        if welfare_breakdown and bu in welfare_breakdown:
+            result["data"][bu]["복리중분류"] = welfare_breakdown[bu]
+
+        gl_bucket = {"직접비": {}, "영업비": {}}
+        if gl_aggregated_df is not None and not gl_aggregated_df.empty:
+            bu_gl = gl_aggregated_df[gl_aggregated_df['사업부'] == bu]
+            for _, row in bu_gl.iterrows():
+                ct = row['비용구분']
+                if ct not in ('직접비', '영업비'):
+                    continue
+                category = row['대분류']
+                gl_label = row['gl설명']
+                month = row['연월']
+                amount = int(row['금액'])
+                if category not in gl_bucket[ct]:
+                    gl_bucket[ct][category] = {}
+                if gl_label not in gl_bucket[ct][category]:
+                    gl_bucket[ct][category][gl_label] = {}
+                gl_bucket[ct][category][gl_label][month] = amount
+        result["data"][bu]["대분류별GL설명"] = gl_bucket
+
     print(f"  - JSON 변환 완료")
     
     return result
@@ -363,6 +619,54 @@ def merge_json(existing, new_data):
                     existing["data"][bu][cost_type][category] = {}
                 for month, amount in monthly_amounts.items():
                     existing["data"][bu][cost_type][category][month] = amount
+        new_sub = new_data.get("data", {}).get(bu, {}).get("급여중분류")
+        if new_sub:
+            if "급여중분류" not in existing["data"][bu]:
+                existing["data"][bu]["급여중분류"] = {"직접비": {}, "영업비": {}}
+            for ct in ["직접비", "영업비"]:
+                if ct not in existing["data"][bu]["급여중분류"]:
+                    existing["data"][bu]["급여중분류"][ct] = {}
+                for label, monthly_amounts in new_sub.get(ct, {}).items():
+                    if label not in existing["data"][bu]["급여중분류"][ct]:
+                        existing["data"][bu]["급여중분류"][ct][label] = {}
+                    for month, amount in monthly_amounts.items():
+                        existing["data"][bu]["급여중분류"][ct][label][month] = amount
+        new_wel = new_data.get("data", {}).get(bu, {}).get("복리중분류")
+        if new_wel:
+            if "복리중분류" not in existing["data"][bu]:
+                existing["data"][bu]["복리중분류"] = {
+                    "직접비": {"중분류": {}, "현지직원세부": {}},
+                    "영업비": {"중분류": {}, "현지직원세부": {}},
+                }
+            for ct in ["직접비", "영업비"]:
+                ew = existing["data"][bu]["복리중분류"]
+                if ct not in ew:
+                    ew[ct] = {"중분류": {}, "현지직원세부": {}}
+                nw = new_wel.get(ct, {})
+                for bucket in ["중분류", "현지직원세부"]:
+                    if bucket not in ew[ct]:
+                        ew[ct][bucket] = {}
+                    for label, monthly_amounts in nw.get(bucket, {}).items():
+                        if label not in ew[ct][bucket]:
+                            ew[ct][bucket][label] = {}
+                        for month, amount in monthly_amounts.items():
+                            ew[ct][bucket][label][month] = amount
+        new_gl = new_data.get("data", {}).get(bu, {}).get("대분류별GL설명")
+        if new_gl:
+            if "대분류별GL설명" not in existing["data"][bu]:
+                existing["data"][bu]["대분류별GL설명"] = {"직접비": {}, "영업비": {}}
+            eg = existing["data"][bu]["대분류별GL설명"]
+            for ct in ["직접비", "영업비"]:
+                if ct not in eg:
+                    eg[ct] = {}
+                for category, gl_map in (new_gl.get(ct) or {}).items():
+                    if category not in eg[ct]:
+                        eg[ct][category] = {}
+                    for gl_label, monthly_amounts in gl_map.items():
+                        if gl_label not in eg[ct][category]:
+                            eg[ct][category][gl_label] = {}
+                        for month, amount in monthly_amounts.items():
+                            eg[ct][category][gl_label][month] = amount
     return existing
 
 
@@ -763,9 +1067,18 @@ def main():
             
             # 6. 집계
             aggregated_df = aggregate_data(cost_df)
+            gl_aggregated_df = aggregate_gl_by_category(cost_df)
+            salary_breakdown = aggregate_salary_subcategories(cost_df)
+            welfare_breakdown = aggregate_welfare_subcategories(cost_df)
             
             # 7. JSON 변환
-            new_json = convert_to_hierarchical_json(aggregated_df, months)
+            new_json = convert_to_hierarchical_json(
+                aggregated_df,
+                months,
+                salary_breakdown,
+                welfare_breakdown,
+                gl_aggregated_df,
+            )
             
             # 8. 병합 후 저장 (증분 모드면 기존 + 새 데이터)
             if not is_full and existing_json:
