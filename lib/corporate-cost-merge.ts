@@ -150,5 +150,31 @@ export function mergeCorporateBusinessUnitCosts(
     out.대분류별GL설명 = glOut;
   }
 
+  // 재무식(연결계정과목) 합산 — 직접/영업 구분 없음
+  const finOut: Record<string, Record<string, number>> = {};
+  for (const buId of CORPORATE_BUSINESS_UNIT_IDS) {
+    const fin = unitData[buId]?.재무식;
+    if (!fin) continue;
+    for (const category of Object.keys(fin)) {
+      if (!finOut[category]) finOut[category] = {};
+      const dst = finOut[category];
+      const src = fin[category];
+      for (const month of Object.keys(src)) {
+        dst[month] = (dst[month] || 0) + src[month];
+      }
+    }
+  }
+  if (Object.keys(finOut).length > 0) {
+    out.재무식 = finOut;
+  }
+
+  const finGlOut: GlBreakdownByCategory = {};
+  for (const buId of CORPORATE_BUSINESS_UNIT_IDS) {
+    mergeGlBreakdown(finGlOut, unitData[buId]?.재무식GL설명);
+  }
+  if (Object.keys(finGlOut).length > 0) {
+    out.재무식GL설명 = finGlOut;
+  }
+
   return out;
 }

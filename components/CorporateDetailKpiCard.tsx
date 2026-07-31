@@ -1,7 +1,8 @@
 'use client';
 
 import type { CorporateKpiColumn, CorporateKpiMetrics } from '@/lib/detail-corporate-kpi';
-import { toThousandCNY } from '@/utils/formatters';
+import { formatAmount } from '@/utils/formatters';
+import type { Currency } from '@/lib/exchange-rates';
 
 function toMillionCNY(amount: number): string {
   const m = amount / 1_000_000;
@@ -13,9 +14,9 @@ function toMillionCNY(amount: number): string {
   );
 }
 
-function CostCell({ col }: { col: CorporateKpiColumn }) {
-  const main = toThousandCNY(col.cost);
-  const prev = toThousandCNY(col.costPrev);
+function CostCell({ col, currency }: { col: CorporateKpiColumn; currency: Currency }) {
+  const main = formatAmount(col.cost, currency);
+  const prev = formatAmount(col.costPrev, currency);
   const indexPct =
     col.costYoYIndexPct != null ? (
       <span className="font-semibold text-slate-600">
@@ -59,12 +60,14 @@ function RateCell({ col }: { col: CorporateKpiColumn }) {
   );
 }
 
-function SalesCell({ col }: { col: CorporateKpiColumn }) {
+function SalesCell({ col, currency }: { col: CorporateKpiColumn; currency: Currency }) {
   if (col.sales == null || col.salesPrev == null) {
     return <span className="text-zinc-400 text-[16.5px]">—</span>;
   }
-  const main = toMillionCNY(col.sales);
-  const prev = toMillionCNY(col.salesPrev);
+  // 매출은 금액이 커서 위안도 백만 단위로 표기
+  const main = currency === 'CNY' ? toMillionCNY(col.sales) : formatAmount(col.sales, currency);
+  const prev =
+    currency === 'CNY' ? toMillionCNY(col.salesPrev) : formatAmount(col.salesPrev, currency);
   const indexPct =
     col.salesYoYIndexPct != null ? (
       <span className="font-semibold text-slate-600">
@@ -101,6 +104,10 @@ type Props = {
   activeCostSide?: '직접비' | '영업비';
   /** 접근성용 전체 설명 (미주입 시 title 기반 기본 문구) */
   ariaLabel?: string;
+  /** 표시 통화 */
+  currency?: Currency;
+  /** 1열 헤더 라벨 (당월 / 1분기 등) */
+  periodLabel?: string;
 };
 
 export default function CorporateDetailKpiCard({
@@ -109,6 +116,8 @@ export default function CorporateDetailKpiCard({
   title = '법인 KPI',
   activeCostSide,
   ariaLabel,
+  currency = 'CNY',
+  periodLabel = '당월',
 }: Props) {
   const sectionAria =
     ariaLabel ??
@@ -117,9 +126,9 @@ export default function CorporateDetailKpiCard({
     if (retailLoading && (row === 'sales' || row === 'rate')) {
       return <LoadingCell />;
     }
-    if (row === 'cost') return <CostCell col={col} />;
+    if (row === 'cost') return <CostCell col={col} currency={currency} />;
     if (row === 'rate') return <RateCell col={col} />;
-    return <SalesCell col={col} />;
+    return <SalesCell col={col} currency={currency} />;
   };
 
   const rowTone = {
@@ -173,7 +182,7 @@ export default function CorporateDetailKpiCard({
                   내용
                 </th>
                 <th className="px-2.5 py-2 text-[13.5px] font-semibold tracking-[0.02em] text-slate-500">
-                  당년
+                  {periodLabel}
                 </th>
                 <th className="px-2.5 py-2 text-[13.5px] font-semibold tracking-[0.02em] text-slate-500">
                   YTD

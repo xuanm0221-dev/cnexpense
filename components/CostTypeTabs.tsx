@@ -8,6 +8,7 @@
 import { useMemo, useState } from 'react';
 import {
   CategoryData,
+  CostBasis,
   CostType,
   ViewMode,
   MonthlyAmounts,
@@ -15,20 +16,30 @@ import {
 } from '@/lib/types';
 import {
   getSortedCategories,
+  getSortedFinancialCategories,
   calculateYTD,
   getAmountForMonth,
   calculateYoY,
   yoYDeltaToIndexPercent,
 } from '@/lib/calculations';
-import { toThousandCNY } from '@/utils/formatters';
+import {
+  formatAmount,
+  formatDelta,
+  toThousandCNY,
+  yoyIndex,
+} from '@/utils/formatters';
+import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
+import { fromMonthly, periodCny, periodValue, type Period } from '@/lib/period';
 
 const SALARY_SUB_LABELS = ['기본급', '성과급', 'Red Pack', '외주/PT', '퇴직급여', '미정'] as const;
 
 const WELFARE_L2_ORDER = ['보험/공적금', '주재원', '현지직원'] as const;
 
-/** 모바일: 세로 스택 / 데스크톱: 4열 */
-const rowGridClass =
-  'p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid md:grid-cols-4 md:gap-3 lg:gap-4 md:items-center hover:bg-slate-50/70 transition-colors text-xs sm:text-sm';
+/** 모바일: 세로 스택 / 데스크톱: 4열 (전년 금액 표시 시 5열) */
+const rowGridClassFor = (withPrev: boolean) =>
+  `p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid ${
+    withPrev ? 'md:grid-cols-5' : 'md:grid-cols-4'
+  } md:gap-3 lg:gap-4 md:items-center hover:bg-slate-50/70 transition-colors text-xs sm:text-sm`;
 
 const metricCellClass =
   'flex justify-between items-baseline gap-2 md:block md:text-right tabular-nums';
@@ -130,6 +141,18 @@ interface CostTypeTabsProps {
   };
   welfareSubExpanded?: boolean;
   onWelfareSubExpandedChange?: (open: boolean) => void;
+  /** 집계 기준. '재무식'이면 직접비/영업비 탭 없이 연결계정과목 표만 표시 */
+  costBasis?: CostBasis;
+  /** 재무식 데이터 (연결계정과목 → 월별 금액) */
+  financialCosts?: CategoryData;
+  /** 표시 통화 및 환율 (KRW는 재무식에서만) */
+  currency?: Currency;
+  exchangeRates?: ExchangeRateData | null;
+  /** 조회 기간 (당월/누적/분기) 과 전년 동기간 */
+  period: Period;
+  prevPeriod: Period;
+  /** 재무식에서 전년 금액 컬럼 표시 (헤더 토글) */
+  showPrevYearAmount?: boolean;
 }
 
 export default function CostTypeTabs({
@@ -147,7 +170,18 @@ export default function CostTypeTabs({
   welfareSub,
   welfareSubExpanded: externalWelfareSubExpanded,
   onWelfareSubExpandedChange,
+  costBasis = '관리식',
+  financialCosts,
+  currency = 'CNY',
+  exchangeRates = null,
+  period,
+  prevPeriod,
+  showPrevYearAmount = false,
 }: CostTypeTabsProps) {
+  const isFinancial = costBasis === '재무식';
+  /** 전년 금액 컬럼은 재무식에서만 */
+  const withPrevColumn = isFinancial && showPrevYearAmount;
+  const rowGridClass = rowGridClassFor(withPrevColumn);
   const hasDirectCosts = Object.keys(directCosts).length > 0;
   const hasOperatingCosts = Object.keys(operatingCosts).length > 0;
 
@@ -211,10 +245,23 @@ export default function CostTypeTabs({
     currentCostType = '영업비';
   }
 
+  // 재무식: 연결계정과목 하나의 표 (직접/영업 구분 없음)
+  if (isFinancial) {
+    currentData = financialCosts ?? {};
+    currentCostType = undefined;
+  }
+
   const sortMode: '직접비' | '영업비' =
     activeTab === '전체' ? '직접비' : (currentCostType as '직접비' | '영업비');
 
-  const categories = getSortedCategories(currentData, selectedMonth, isYTD, sortMode);
+  // 기간(당월/누적/분기) 금액 기준으로 표시 여부·정렬 판단
+  const periodAmountOf = (monthly: MonthlyAmounts) =>
+    periodCny(fromMonthly(monthly), period);
+
+  const categories = isFinancial
+    ? getSortedFinancialCategories(currentData, selectedMonth, isYTD, periodAmountOf)
+    : getSortedCategories(currentData, selectedMonth, isYTD, sortMode, periodAmountOf);
+
 
   const salaryBuckets = useMemo(() => {
     if (!salarySub) return null;
@@ -275,33 +322,36 @@ export default function CostTypeTabs({
 
   return (
     <div className="mt-3 sm:mt-4">
-      <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-3 sm:mb-4">
-        <button
-          type="button"
-          onClick={() => setActiveTab('전체')}
-          className={`flex-1 min-w-[4.5rem] sm:min-w-[5rem] py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg border text-xs sm:text-sm font-semibold transition-all ${getTabStyle('전체')}`}
-        >
-          전체
-        </button>
-        {hasDirectCosts && (
+      {/* 재무식은 직접비/영업비 구분이 없어 탭을 표시하지 않는다 */}
+      {!isFinancial && (
+        <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-3 sm:mb-4">
           <button
             type="button"
-            onClick={() => setActiveTab('직접비')}
-            className={`flex-1 min-w-[4.5rem] sm:min-w-[5rem] py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg border text-xs sm:text-sm font-semibold transition-all ${getTabStyle('직접비')}`}
+            onClick={() => setActiveTab('전체')}
+            className={`flex-1 min-w-[4.5rem] sm:min-w-[5rem] py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg border text-xs sm:text-sm font-semibold transition-all ${getTabStyle('전체')}`}
           >
-            직접비
+            전체
           </button>
-        )}
-        {hasOperatingCosts && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('영업비')}
-            className={`flex-1 min-w-[4.5rem] sm:min-w-[5rem] py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg border text-xs sm:text-sm font-semibold transition-all ${getTabStyle('영업비')}`}
-          >
-            영업비
-          </button>
-        )}
-      </div>
+          {hasDirectCosts && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('직접비')}
+              className={`flex-1 min-w-[4.5rem] sm:min-w-[5rem] py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg border text-xs sm:text-sm font-semibold transition-all ${getTabStyle('직접비')}`}
+            >
+              직접비
+            </button>
+          )}
+          {hasOperatingCosts && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('영업비')}
+              className={`flex-1 min-w-[4.5rem] sm:min-w-[5rem] py-1.5 sm:py-2 px-2 sm:px-4 rounded-lg border text-xs sm:text-sm font-semibold transition-all ${getTabStyle('영업비')}`}
+            >
+              영업비
+            </button>
+          )}
+        </div>
+      )}
 
       {categories.length === 0 ? (
         <div className="space-y-1.5 sm:space-y-2">
@@ -311,31 +361,44 @@ export default function CostTypeTabs({
         </div>
       ) : (
         <div className="min-h-0 md:rounded-xl md:border md:border-slate-200/75 md:bg-slate-50/55 shadow-sm shadow-slate-200/30">
-          <div className="hidden md:grid md:grid-cols-4 md:gap-3 lg:gap-4 sticky top-0 z-10 px-2 sm:px-3 py-2 mb-2 text-xs text-slate-500 font-semibold border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-sm">
-            <div>대분류</div>
+          <div
+            className={`hidden md:grid ${
+              withPrevColumn ? 'md:grid-cols-5' : 'md:grid-cols-4'
+            } md:gap-3 lg:gap-4 sticky top-0 z-10 px-2 sm:px-3 py-2 mb-2 text-xs text-slate-500 font-semibold border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-sm`}
+          >
+            <div>{isFinancial ? '연결계정과목' : '대분류'}</div>
             <div className="text-right">금액</div>
+            {withPrevColumn && <div className="text-right">전년금액</div>}
             <div className="text-right">YOY금액</div>
             <div className="text-right">YoY</div>
           </div>
           <div className="space-y-1.5 sm:space-y-2">
           {categories.map((category) => {
             const monthlyData = currentData[category];
-            const amount = isYTD
-              ? calculateYTD(monthlyData, selectedMonth)
-              : getAmountForMonth(monthlyData, selectedMonth);
+            const accessor = fromMonthly(monthlyData);
+            // 표시 통화 기준 기간 금액 (분기는 누적 차감)
+            const amount = periodValue(accessor, period, currency, exchangeRates);
+            const prevAmount = periodValue(accessor, prevPeriod, currency, exchangeRates);
             const strongDividerClass =
-              category === '복리비' || category === '출장비'
+              !isFinancial && (category === '복리비' || category === '출장비')
                 ? 'border-slate-300 border-b-[3px] border-solid'
                 : '';
 
-            const yoy = calculateYoY(monthlyData, selectedMonth, isYTD);
-            const yoyIdx = yoYDeltaToIndexPercent(yoy.pct);
+            const yoyIdx = yoyIndex(amount, prevAmount);
+            const yoyDelta = prevAmount === 0 ? null : formatDelta(amount, prevAmount, currency);
 
+            // 급여·복리 중분류 펼침은 관리식 대분류 기준 — 재무식에서는 제공하지 않음
             const showSalaryToggle =
-              category === '급여' && salaryBuckets && visibleSalarySubLabels.length > 0;
+              !isFinancial &&
+              category === '급여' &&
+              salaryBuckets &&
+              visibleSalarySubLabels.length > 0;
 
             const showWelfareToggle =
-              category === '복리비' && welfareSideResolved && visibleWelfareL2.length > 0;
+              !isFinancial &&
+              category === '복리비' &&
+              welfareSideResolved &&
+              visibleWelfareL2.length > 0;
 
             return (
               <div key={category}>
@@ -368,19 +431,29 @@ export default function CostTypeTabs({
 
                   <div className={metricCellClass}>
                     <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">금액</span>
-                    <span className="text-right font-semibold text-gray-900">{toThousandCNY(amount)}</span>
+                    <span className="text-right font-semibold text-gray-900">
+                      {formatAmount(amount, currency)}
+                    </span>
                   </div>
+
+                  {withPrevColumn && (
+                    <div className={metricCellClass}>
+                      <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
+                        전년금액
+                      </span>
+                      <span className="text-right text-gray-500 tabular-nums">
+                        {formatAmount(prevAmount, currency)}
+                      </span>
+                    </div>
+                  )}
 
                   <div className={metricCellClass}>
                     <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">YOY금액</span>
                     <span className="text-right text-gray-800 tabular-nums font-medium">
-                      {yoy.deltaK === 'N/A' ? (
+                      {yoyDelta === null ? (
                         <span className="text-gray-400 font-normal">—</span>
                       ) : (
-                        <>
-                          {yoy.deltaK >= 0 ? '+' : ''}
-                          {yoy.deltaK.toLocaleString('en-US')}K
-                        </>
+                        yoyDelta
                       )}
                     </span>
                   </div>
@@ -388,7 +461,7 @@ export default function CostTypeTabs({
                   <div className={metricCellClass}>
                     <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">YoY</span>
                     <div className="text-right">
-                      {yoyIdx === 'N/A' ? (
+                      {yoyIdx === null ? (
                         <span className="text-gray-400">N/A</span>
                       ) : (
                         <span className={yoyIdx >= 100 ? 'text-red-600' : 'text-blue-600'}>{yoyIdx}%</span>

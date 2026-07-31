@@ -40,6 +40,52 @@ export function calculateYTD(
 }
 
 /**
+ * YTD 평균 — 1월~endMonth 중 **데이터가 있는 월**의 평균.
+ *
+ * 인원수처럼 스톡(잔량) 성격의 지표는 월별 값을 더하면 의미가 없으므로(2월 YTD가
+ * 1월+2월 인원이 되어버림) 평균을 쓴다. 금액처럼 플로우 성격은 calculateYTD 사용.
+ * @param data 월별 값
+ * @param endMonth "2026-02" 형식
+ * @returns 평균값, 해당 구간에 데이터가 없으면 null
+ */
+export function calculateYTDAverage(
+  data: MonthlyAmounts,
+  endMonth: string
+): number | null {
+  const [year, month] = endMonth.split('-');
+  const endMonthNum = parseInt(month);
+
+  let total = 0;
+  let count = 0;
+  for (let m = 1; m <= endMonthNum; m++) {
+    const monthKey = `${year}-${m.toString().padStart(2, '0')}`;
+    const v = data[monthKey];
+    if (v != null) {
+      total += v;
+      count += 1;
+    }
+  }
+
+  return count > 0 ? total / count : null;
+}
+
+/**
+ * 인원수 기준값 — 당월이면 선택월 스냅샷, YTD면 1월~선택월 평균.
+ * @param data 월별 인원수
+ * @param month "2026-02" 형식
+ */
+export function headcountBasis(
+  data: MonthlyAmounts | null | undefined,
+  month: string,
+  isYTD: boolean
+): number | null {
+  if (!data) return null;
+  if (isYTD) return calculateYTDAverage(data, month);
+  const v = data[month];
+  return v != null ? v : null;
+}
+
+/**
  * YTD 구간의 월 개수 (1월~endMonth, endMonth의 월 번호와 동일)
  * @param endMonth "2026-03" 형식
  */
@@ -146,6 +192,45 @@ const DIRECT_COST_ORDER = [
   '기타',
 ];
 
+/** 재무식 연결계정과목 표시 순서 (손익 읽는 순서) */
+export const FINANCIAL_CATEGORY_ORDER = [
+  '인건비',
+  '광고선전비',
+  '수수료',
+  '감가상각비',
+  '기타',
+];
+
+/**
+ * 재무식 연결계정과목 정렬 — 금액이 0이 아닌 항목만, FINANCIAL_CATEGORY_ORDER 순.
+ * 순서에 없는 항목은 뒤에 가나다순으로 붙인다(맵핑에 신규 연결계정과목이 생겨도 누락 없음).
+ */
+export function getSortedFinancialCategories(
+  categoryData: CategoryData,
+  month: string,
+  isYTD: boolean = false,
+  amountOf?: (monthly: MonthlyAmounts) => number
+): string[] {
+  const valid = Object.keys(categoryData).filter(category => {
+    const monthlyData = categoryData[category];
+    const amount = amountOf
+      ? amountOf(monthlyData)
+      : isYTD
+        ? calculateYTD(monthlyData, month)
+        : getAmountForMonth(monthlyData, month);
+    return amount !== 0;
+  });
+
+  return valid.sort((a, b) => {
+    const ia = FINANCIAL_CATEGORY_ORDER.indexOf(a);
+    const ib = FINANCIAL_CATEGORY_ORDER.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b, 'ko');
+  });
+}
+
 /**
  * 대분류 목록을 지정된 순서로 정렬
  * @param categoryData 대분류별 데이터
@@ -158,29 +243,27 @@ export function getSortedCategories(
   categoryData: CategoryData,
   month: string,
   isYTD: boolean = false,
-  costType?: '직접비' | '영업비'
+  costType?: '직접비' | '영업비',
+  amountOf?: (monthly: MonthlyAmounts) => number
 ): string[] {
   const categories = Object.keys(categoryData);
-  
+
+  const resolve = (monthly: MonthlyAmounts): number =>
+    amountOf
+      ? amountOf(monthly)
+      : isYTD
+        ? calculateYTD(monthly, month)
+        : getAmountForMonth(monthly, month);
+
   // 금액이 0이 아닌 항목만 표시 (음수 상계·환입 등도 행으로 노출)
-  const validCategories = categories.filter(category => {
-    const monthlyData = categoryData[category];
-    const amount = isYTD
-      ? calculateYTD(monthlyData, month)
-      : getAmountForMonth(monthlyData, month);
-    return amount !== 0;
-  });
-  
+  const validCategories = categories.filter(
+    category => resolve(categoryData[category]) !== 0
+  );
+
   // 비용 구분이 지정되지 않으면 금액 순으로 정렬
   if (!costType) {
     return validCategories
-      .map(category => {
-        const monthlyData = categoryData[category];
-        const amount = isYTD
-          ? calculateYTD(monthlyData, month)
-          : getAmountForMonth(monthlyData, month);
-        return { category, amount };
-      })
+      .map(category => ({ category, amount: resolve(categoryData[category]) }))
       .sort((a, b) => b.amount - a.amount)
       .map(item => item.category);
   }

@@ -43,6 +43,13 @@ export interface BusinessUnitCosts {
     직접비: GlBreakdownByCategory;
     영업비: GlBreakdownByCategory;
   };
+  /**
+   * 재무식 — 연결계정과목 기준. **직접비/영업비 구분 없음**.
+   * 계정과목맵핑.csv 의 `sap code`(=G/L 계정) → `연결계정과목` 매핑 결과.
+   */
+  재무식?: CategoryData;
+  /** 재무식 드릴다운: 연결계정과목 → G/L 계정 설명 → 월별 금액 */
+  재무식GL설명?: GlBreakdownByCategory;
 }
 
 // 전체 비용 데이터
@@ -68,9 +75,55 @@ export interface HeadcountData {
 // 매장 인원수 데이터 구조 (사무실 인원수와 동일한 구조)
 export type StoreHeadcountData = HeadcountData;
 
-// 리테일 매출 데이터 구조
+// 리테일 매출 데이터 구조 (컴포넌트 소비용 — 실판 V+ 금액만)
 export interface RetailSalesData {
   [businessUnit: string]: MonthlyAmounts; // "MLB": { "2024-01": 12345678, ... }
+}
+
+/**
+ * 리테일 기간(당월/YTD) 지표 — (mei)리테일 스킬 §10-6
+ * 금액은 위안. sale = 실판 매출(V+), tag = Tag가 매출
+ */
+export interface RetailRangeMetrics {
+  sale: number;
+  tag: number;
+  /** 할인율 = (1 - 실판/Tag) × 100 */
+  discountRate: number | null;
+  pySale: number;
+  pyTag: number;
+  pyDiscountRate: number | null;
+  /** YoY = 당년/전년 × 100 (스킬 §10-2 — 절대값 지수) */
+  yoyPct: number | null;
+}
+
+/** 채널별 지표 (직영 ON/OFF · 대리상 ON/OFF · 미지정) */
+export interface RetailChannelMetrics {
+  channel: string;
+  mtd: RetailRangeMetrics;
+  ytd: RetailRangeMetrics;
+}
+
+/** 채널 분해 — 뷰 모드(당월/YTD) 하나를 펼친 형태 */
+export type RetailChannelBreakdown = RetailRangeMetrics & { channel: string };
+
+/** 사업부(브랜드 / 법인 / 경영지원) 단위 리테일 지표 */
+export interface RetailUnitMetrics {
+  mtd: RetailRangeMetrics;
+  ytd: RetailRangeMetrics;
+  channels: RetailChannelMetrics[];
+}
+
+/** /api/retail-sales 응답 */
+export interface RetailSalesResponse {
+  /** 조회 기준월 "2026-06" */
+  month: string;
+  /** 전년 동월 "2025-06" */
+  prevMonth: string;
+  /** 브랜드 5개 + 법인 + 경영지원 */
+  units: { [businessUnit: string]: RetailUnitMetrics };
+  /** 매핑되지 않은 brd_cd (브랜드 코드 검증용) */
+  unmappedBrandCodes: { brdCd: string; ytdSale: number }[];
+  generatedAt: string;
 }
 
 // YoY 계산 결과
@@ -88,11 +141,24 @@ export interface CategoryDisplayData {
   yoy: YoYResult;      // YoY 정보
 }
 
-// 뷰 모드
-export type ViewMode = '당월' | '누적(YTD)';
+// 뷰 모드 (분기는 누적 차감으로 계산 — lib/period.ts 참고)
+export type ViewMode =
+  | '당월'
+  | '누적(YTD)'
+  | '1분기'
+  | '2분기'
+  | '3분기'
+  | '4분기';
 
 // 비용 구분
 export type CostType = '전체' | '직접비' | '영업비';
+
+/**
+ * 집계 기준
+ * - 관리식: 대분류(급여·복리비·광고비…) × 직접비/영업비
+ * - 재무식: 연결계정과목(인건비·광고선전비·수수료…), 직접비/영업비 구분 없음
+ */
+export type CostBasis = '관리식' | '재무식';
 
 // 사업부 정보
 export interface BusinessUnit {

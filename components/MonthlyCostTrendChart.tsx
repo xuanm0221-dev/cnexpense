@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import type { CategoryData } from '@/lib/types';
+import type { CostBasis, CategoryData } from '@/lib/types';
 import {
   calculateCategoryTotal,
   calculateYTD,
@@ -15,6 +15,7 @@ import {
   getYTDMonthCount,
 } from '@/lib/calculations';
 import { getDetailTrendCategoryColor } from '@/lib/category-chart-colors';
+import type { Currency } from '@/lib/exchange-rates';
 
 
 // 막대/범례 색: 대분류명 단일 매핑. 직접비·영업비 탭은 데이터만 바꾸며 팔레트 분기 없음.
@@ -124,8 +125,8 @@ function yoyIndexFromAmounts(curr: number, prev: number): number | null {
   return 100 + Math.round(((curr - prev) / Math.abs(prev)) * 100);
 }
 
-function formatTooltipAmtThousand(amountRaw: number): string {
-  return Math.round(amountRaw / 1000).toLocaleString('en-US');
+function formatTooltipAmtThousand(amountRaw: number, divisor: number = 1000): string {
+  return Math.round(amountRaw / divisor).toLocaleString('en-US');
 }
 
 /** 툴팁 표 3열 헤더: 예 YTD(1-2월) */
@@ -141,6 +142,10 @@ interface MonthlyCostTrendChartProps {
   months: string[];
   costType: CostSide;
   onCostTypeChange: (t: CostSide) => void;
+  /** 재무식이면 직접/영업 탭을 숨기고 연결계정과목 그대로 표시 */
+  costBasis?: CostBasis;
+  /** 표시 통화 — KRW면 categoryData가 이미 원화로 환산되어 들어온다 */
+  currency?: Currency;
   /** 기준월 막대의 YOY 점 강조(흰 채움 + 빨간 테두리) */
   highlightMonthKey?: string | null;
   /** 둘 다 주면 범례 선택을 상위에서 제어 (법인 상세 KPI 연동용) */
@@ -170,10 +175,17 @@ export default function MonthlyCostTrendChart({
   months,
   costType,
   onCostTypeChange,
+  costBasis = '관리식',
+  currency = 'CNY',
   highlightMonthKey,
   legendSelected: legendSelectedProp,
   onLegendSelectedChange,
 }: MonthlyCostTrendChartProps) {
+  const isFinancialBasis = costBasis === '재무식';
+  /** 위안=천위안(K), 원화=백만원(M) */
+  const unitDivisor = currency === 'KRW' ? 1_000_000 : 1000;
+  const unitLabel = currency === 'KRW' ? 'KRW M' : 'CNY K';
+
   const [expanded, setExpanded] = useState(true);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [legendSelectedInternal, setLegendSelectedInternal] = useState<Set<string>>(
@@ -185,8 +197,8 @@ export default function MonthlyCostTrendChart({
   const legendSelected = isLegendControlled ? legendSelectedProp! : legendSelectedInternal;
 
   const sortedCategories = useMemo(
-    () => getSortedCategoriesForMonths(categoryData, months, costType),
-    [categoryData, months, costType]
+    () => getSortedCategoriesForMonths(categoryData, months, isFinancialBasis ? undefined : costType),
+    [categoryData, months, costType, isFinancialBasis]
   );
 
   useEffect(() => {
@@ -242,7 +254,7 @@ export default function MonthlyCostTrendChart({
       const prevM = getPreviousYearMonth(monthKey);
       for (const cat of sortedCategories) {
         const raw = getAmountForMonth(categoryData[cat], monthKey);
-        const k = raw / 1000;
+        const k = raw / unitDivisor;
         row[cat] = k;
         row.totalRaw += raw;
         row.prevTotalRaw += getAmountForMonth(categoryData[cat], prevM);
@@ -293,7 +305,7 @@ export default function MonthlyCostTrendChart({
   const maxTotalK = useMemo(() => {
     let m = 0;
     for (const r of chartDataFiltered) {
-      const t = r.totalRaw / 1000;
+      const t = r.totalRaw / unitDivisor;
       if (t > m) m = t;
     }
     return m > 0 ? m * 1.08 : 1;
@@ -446,12 +458,14 @@ export default function MonthlyCostTrendChart({
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3">
               <h2 className="text-base sm:text-lg font-semibold tracking-[-0.015em] text-slate-900 shrink-0">
-                월별 비용 추이 및 YOY 비교 (CNY K)
+                월별 비용 추이 및 YOY 비교 ({unitLabel})
               </h2>
-              <div className="flex items-center gap-2 shrink-0 rounded-full bg-slate-50/90 px-1.5 py-1 ring-1 ring-slate-200/80">
-                {tabBtn('영업비', costType === '영업비')}
-                {tabBtn('직접비', costType === '직접비')}
-              </div>
+              {!isFinancialBasis && (
+                <div className="flex items-center gap-2 shrink-0 rounded-full bg-slate-50/90 px-1.5 py-1 ring-1 ring-slate-200/80">
+                  {tabBtn('영업비', costType === '영업비')}
+                  {tabBtn('직접비', costType === '직접비')}
+                </div>
+              )}
               {legendToolbar}
             </div>
             <p className="text-xs sm:text-sm text-slate-500 mt-1.5 leading-relaxed">

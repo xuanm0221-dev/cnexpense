@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).parent.parent
 COST_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/비용파일")
 HEADCOUNT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/사무실인원수")
 HEADCOUNT_STORE_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/매장인원수")
+ADJUSTMENT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/조정분개")
 MASTERS_DIR = BASE_DIR / "data" / "masters"
 OUTPUT_DIR = BASE_DIR / "data" / "processed"
 OUTPUT_FILE = OUTPUT_DIR / "aggregated-costs.json"
@@ -31,6 +32,18 @@ STORE_HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "store-headcount.json"
 
 # 분석 대상 사업부 (마스터 파일과 정확히 일치해야 함)
 TARGET_BUSINESS_UNITS = ["경영지원", "MLB", "MLB KIDS", "Discovery", "Duvetica", "SUPRA"]
+
+# 포함 기준은 계정과목맵핑.csv 의 `관리` / `재무` 컬럼 값이 '사용' 인지로 판단한다.
+#   관리 X : 관리식에서 제외 (예: 대리상지원금 3개 계정)
+#   재무 X : 재무식에서 제외 (예: 96030101/96030103/96030105 관리회계 조정계정)
+# 두 기준의 포함 계정이 다르므로 관리식·재무식 총액은 서로 다르다.
+USE_FLAG = "사용"
+FINANCIAL_EXCLUDED = "__제외__"
+
+# IFRS 조정분개를 귀속시킬 사업부 (조정분개 파일에 브랜드 구분이 없음)
+ADJUSTMENT_BUSINESS_UNIT = "MLB"
+# 조정분개 시트명
+ADJUSTMENT_SHEET = "调整分录"
 
 
 def load_master_files():
@@ -54,11 +67,83 @@ def load_master_files():
     )
     # 컬럼명 정리
     account_master.columns = account_master.columns.str.strip()
-    
+
     print(f"  - 코스트센터 마스터: {len(cost_center_master)}건")
     print(f"  - 계정과목 마스터: {len(account_master)}건")
-    
-    return cost_center_master, account_master
+
+    # 계정과목 맵핑 (재무식) — sap code(=G/L 계정) → 연결계정과목
+    account_mapping = load_account_mapping()
+
+    return cost_center_master, account_master, account_mapping
+
+
+def load_account_mapping():
+    """재무식 맵핑 로드: sap code → 연결계정과목 (없으면 None)"""
+    path = MASTERS_DIR / "계정과목맵핑.csv"
+    if not path.exists():
+        print(f"  [주의] 계정과목맵핑.csv 없음 — 재무식 집계 스킵 ({path})")
+        return None
+
+    df = pd.read_csv(path, encoding='utf-8-sig', dtype=str)
+    df.columns = df.columns.str.strip()
+
+    required = {'sap code', '연결계정과목'}
+    if not required.issubset(df.columns):
+        print(f"  [주의] 계정과목맵핑.csv 컬럼 부족: {list(df.columns)} — 재무식 집계 스킵")
+        return None
+
+    df['sap code'] = df['sap code'].fillna('').astype(str).str.strip()
+    df['연결계정과목'] = df['연결계정과목'].fillna('').astype(str).str.strip()
+    if 'pkg code' in df.columns:
+        df['pkg code'] = df['pkg code'].fillna('').astype(str).str.strip()
+    else:
+        df['pkg code'] = ''
+
+    # 관리 / 재무 사용 여부 (컬럼이 없으면 전부 사용으로 간주 — 구 파일 호환)
+    for col in ('관리', '재무'):
+        if col in df.columns:
+            df[col] = df[col].fillna('').astype(str).str.strip()
+        else:
+            df[col] = USE_FLAG
+            print(f"  [주의] 계정과목맵핑.csv 에 '{col}' 컬럼 없음 — 전체 포함으로 처리")
+
+    mgmt_excluded = sorted(
+        c for c in df.loc[df['관리'] != USE_FLAG, 'sap code'] if c
+    )
+    fin_excluded = sorted(
+        c for c in df.loc[df['재무'] != USE_FLAG, 'sap code'] if c
+    )
+    if mgmt_excluded:
+        print(f"  - 관리식 제외 계정 {len(mgmt_excluded)}건: {', '.join(mgmt_excluded)}")
+    if fin_excluded:
+        print(f"  - 재무식 제외 계정 {len(fin_excluded)}건: {', '.join(fin_excluded)}")
+
+    # 재무 미사용 또는 연결계정과목 미기재 → 재무식 집계에서 제외
+    df.loc[
+        (df['재무'] != USE_FLAG) | (df['연결계정과목'] == ''), '연결계정과목'
+    ] = FINANCIAL_EXCLUDED
+
+    # 장부(G/L) 조인용: sap code → 연결계정과목 + 관리식 포함 여부
+    by_sap = (
+        df[df['sap code'] != '']
+        .loc[:, ['sap code', '연결계정과목', '관리']]
+        .drop_duplicates(subset=['sap code'])
+        .rename(columns={'관리': '_관리플래그'})
+    )
+    # 조정분개 조인용: pkg code → 연결계정과목 (sap code 없는 행 포함)
+    by_pkg = {
+        r['pkg code']: r['연결계정과목']
+        for _, r in df.iterrows()
+        if r['pkg code'] and r['연결계정과목'] != FINANCIAL_EXCLUDED
+    }
+
+    n_link = by_sap.loc[by_sap['연결계정과목'] != FINANCIAL_EXCLUDED, '연결계정과목'].nunique()
+    print(
+        f"  - 계정과목 맵핑: sap {len(by_sap)}건 / pkg {len(by_pkg)}종, "
+        f"연결계정과목 {n_link}종"
+    )
+
+    return {'by_sap': by_sap, 'by_pkg': by_pkg}
 
 
 def load_existing_json():
@@ -73,21 +158,35 @@ def load_existing_json():
 
 
 def _parse_csv_months(csv_files):
-    """CSV 파일 목록에서 (파일경로, 연월) 리스트 추출"""
+    """파일 목록에서 (파일경로, 연월) 리스트 추출.
+
+    파일명은 `YY.MM`(26.02) 또는 `YYYY.MM`(2026.02) 모두 허용.
+    확장자는 무관 (.csv / .xlsx 등).
+    """
     result = []
     for file_path in sorted(csv_files):
         filename = os.path.basename(file_path)
-        if '.' in filename:
-            try:
-                parts = filename.replace('.csv', '').split('.')
-                if len(parts) == 2:
-                    yy, mm = parts
-                    year = f"20{yy}"
-                    month = mm.zfill(2)
-                    year_month = f"{year}-{month}"
-                    result.append((file_path, year_month))
-            except Exception:
-                pass
+        if '.' not in filename:
+            continue
+        try:
+            parts = os.path.splitext(filename)[0].split('.')
+            if len(parts) != 2:
+                continue
+            yy, mm = parts[0].strip(), parts[1].strip()
+            if len(yy) == 4:
+                year = yy               # 2026.02.csv
+            elif len(yy) == 2:
+                year = f"20{yy}"        # 26.02.csv
+            else:
+                print(f"  [건너뜀] 파일명 연도 형식 오류: {filename}")
+                continue
+            month_num = int(mm)
+            if not 1 <= month_num <= 12:
+                print(f"  [건너뜀] 파일명 월 범위 오류: {filename}")
+                continue
+            result.append((file_path, f"{year}-{month_num:02d}"))
+        except Exception:
+            print(f"  [건너뜀] 파일명 파싱 실패: {filename}")
     return result
 
 
@@ -172,7 +271,7 @@ def clean_and_filter_data(df):
     return df
 
 
-def join_with_masters(df, cost_center_master, account_master):
+def join_with_masters(df, cost_center_master, account_master, account_mapping=None):
     """마스터 파일과 조인"""
     print("\n[4/8] 마스터 조인 중...")
     
@@ -235,9 +334,30 @@ def join_with_masters(df, cost_center_master, account_master):
         print(f"  [주의] 계정과목 조인 실패: {len(no_account)}건")
         unique_gl = no_account['G/L 계정'].unique()
         print(f"     미매칭 G/L 계정 전체: {', '.join(map(str, unique_gl))}")
-    
+
+    # 3. 계정과목 맵핑 조인 (재무식: 연결계정과목)
+    if account_mapping is not None:
+        df['_gl_key'] = df['G/L 계정'].astype(str).str.strip()
+        df = df.merge(
+            account_mapping['by_sap'],
+            left_on='_gl_key',
+            right_on='sap code',
+            how='left'
+        )
+        df = df.drop(columns=['_gl_key', 'sap code'], errors='ignore')
+
+        df['_관리포함'] = df['_관리플래그'].fillna(USE_FLAG).astype(str).str.strip() == USE_FLAG
+        df = df.drop(columns=['_관리플래그'], errors='ignore')
+
+        no_link = df[df['연결계정과목'].isna()]
+        if len(no_link) > 0:
+            unique_gl = no_link['G/L 계정'].astype(str).str.strip().unique()
+            print(f"  [주의] 재무식 맵핑 실패: {len(no_link)}건 → 재무식에서 제외")
+            print(f"     미매칭 G/L 계정: {', '.join(map(str, unique_gl))}")
+        df['연결계정과목'] = df['연결계정과목'].fillna(FINANCIAL_EXCLUDED)
+
     print(f"  - 조인 완료")
-    
+
     return df
 
 
@@ -489,6 +609,191 @@ def aggregate_data(df):
     return grouped
 
 
+def load_adjustment_entries(pkg_map):
+    """
+    IFRS 조정분개 로드 (재무식 전용).
+
+    파일: D:/로컬파일/비용대시보드파일/조정분개/YY.MM.xlsx (분기말 기준), 시트 `调整分录`
+      - C열 = pkg code, G열 = PL 차변, H열 = PL 대변  → 비용 = 차변 − 대변 (CNY)
+      - pkg code 가 맵핑에 있는 계정만 사용 (= 영업이익 위 계정만 자동 선별)
+      - 금액은 **분기 누적**이므로 직전 분기 파일과 차분해서 해당 분기말 월에 넣는다
+        (26.03 → 3월, 26.06 = 26.06−26.03 → 6월)
+
+    반환: {연월: {연결계정과목: 금액}}
+    """
+    if not pkg_map:
+        return {}
+    if not ADJUSTMENT_FILES_DIR.exists():
+        print(f"  [주의] 조정분개 폴더 없음 — 스킵 ({ADJUSTMENT_FILES_DIR})")
+        return {}
+
+    files = _parse_csv_months(
+        [str(p) for p in ADJUSTMENT_FILES_DIR.glob("*.xlsx") if not p.name.startswith("~$")]
+    )
+    if not files:
+        print(f"  [주의] 조정분개 파일 없음 ({ADJUSTMENT_FILES_DIR})")
+        return {}
+
+    # 누적 금액: {연월: {연결계정과목: 누적금액}}
+    cumulative = {}
+    for file_path, year_month in sorted(files, key=lambda x: x[1]):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, data_only=True)
+            ws = wb[ADJUSTMENT_SHEET] if ADJUSTMENT_SHEET in wb.sheetnames else wb.worksheets[0]
+        except Exception as e:
+            print(f"  [실패] 조정분개 로드 실패 {os.path.basename(file_path)}: {e}")
+            continue
+
+        totals = {}
+        used = skipped = 0
+        for row in range(1, ws.max_row + 1):
+            code = ws.cell(row, 3).value          # C: pkg code
+            debit = ws.cell(row, 7).value         # G: PL 차변
+            credit = ws.cell(row, 8).value        # H: PL 대변
+            debit = debit if isinstance(debit, (int, float)) else 0
+            credit = credit if isinstance(credit, (int, float)) else 0
+            if debit == 0 and credit == 0:
+                continue
+            if isinstance(code, (int, float)):
+                code_str = str(int(code))
+            else:
+                code_str = str(code or '').strip()
+            link = pkg_map.get(code_str)
+            if not link:
+                skipped += 1
+                continue
+            totals[link] = totals.get(link, 0) + (debit - credit)
+            used += 1
+
+        cumulative[year_month] = totals
+        print(
+            f"  - 조정분개 {os.path.basename(file_path)} → {year_month}: "
+            f"{used}행 반영 / {skipped}행 제외(pkg code 미매핑), 합계 {sum(totals.values()):,.0f} 위안"
+        )
+
+    # 연도별로 누적 → 증분 변환
+    monthly = {}
+    by_year = {}
+    for ym in cumulative:
+        by_year.setdefault(ym.split('-')[0], []).append(ym)
+
+    for year, months in by_year.items():
+        prev = {}
+        for ym in sorted(months):
+            curr = cumulative[ym]
+            delta = {}
+            for k in set(curr) | set(prev):
+                v = curr.get(k, 0) - prev.get(k, 0)
+                if v:
+                    delta[k] = v
+            if delta:
+                monthly[ym] = delta
+            prev = curr
+
+    return monthly
+
+
+def apply_adjustments(financial_df, adjustments, allowed_months=None):
+    """조정분개를 재무식 집계에 더한다 (전액 ADJUSTMENT_BUSINESS_UNIT 귀속).
+
+    allowed_months: 증분 모드에서 이번에 처리한 월만 반영 (지정 시).
+      지정하지 않으면(=--full) 전체 반영.
+      증분 모드에서 이 제한이 없으면, 이번에 처리하지 않은 분기말 월의 재무식 값이
+      '조정분개만' 있는 값으로 덮어써져 장부 금액이 사라진다.
+    """
+    if not adjustments:
+        return financial_df
+
+    rows = []
+    for ym, by_link in adjustments.items():
+        if allowed_months is not None and ym not in allowed_months:
+            continue
+        for link, amount in by_link.items():
+            rows.append(
+                {'연월': ym, '사업부': ADJUSTMENT_BUSINESS_UNIT, '연결계정과목': link, '금액': amount}
+            )
+    if not rows:
+        return financial_df
+
+    merged = pd.concat([financial_df, pd.DataFrame(rows)], ignore_index=True)
+    merged = merged.groupby(['연월', '사업부', '연결계정과목'], as_index=False)['금액'].sum()
+    print(f"  - 조정분개 반영: {len(rows)}건 → 사업부 '{ADJUSTMENT_BUSINESS_UNIT}'")
+    return merged
+
+
+def apply_adjustments_gl(financial_gl_df, adjustments, allowed_months=None):
+    """조정분개를 재무식 드릴다운에도 '[IFRS 조정분개]' 라벨로 추가"""
+    if not adjustments:
+        return financial_gl_df
+
+    rows = []
+    for ym, by_link in adjustments.items():
+        if allowed_months is not None and ym not in allowed_months:
+            continue
+        for link, amount in by_link.items():
+            rows.append({
+                '연월': ym,
+                '사업부': ADJUSTMENT_BUSINESS_UNIT,
+                '연결계정과목': link,
+                'gl설명': '[IFRS 조정분개]',
+                '금액': amount,
+            })
+    if not rows:
+        return financial_gl_df
+    merged = pd.concat([financial_gl_df, pd.DataFrame(rows)], ignore_index=True)
+    return merged.groupby(
+        ['연월', '사업부', '연결계정과목', 'gl설명'], as_index=False
+    )['금액'].sum()
+
+
+def aggregate_financial_data(df):
+    """
+    재무식 집계 — **직접비/영업비 구분 없이** 연결계정과목 기준.
+    반환: 연월, 사업부, 연결계정과목, 금액
+    """
+    empty_cols = ['연월', '사업부', '연결계정과목', '금액']
+    if df.empty or '연결계정과목' not in df.columns:
+        if not df.empty:
+            print("  [주의] 재무식: 연결계정과목 컬럼 없음 — 스킵")
+        return pd.DataFrame(columns=empty_cols)
+
+    d = df[df['연결계정과목'] != FINANCIAL_EXCLUDED]
+    excluded = df[df['연결계정과목'] == FINANCIAL_EXCLUDED]['금액(전표 통화)'].sum()
+    if excluded:
+        print(f"  - 재무식 제외 금액(연결계정과목 미지정): {excluded:,.0f} 위안 — 관리식 총액과의 차이")
+
+    grouped = d.groupby(['연월', '사업부', '연결계정과목']).agg({
+        '금액(전표 통화)': 'sum'
+    }).reset_index()
+    grouped.columns = empty_cols
+
+    print(f"  - 재무식(연결계정과목) 집계 완료: {len(grouped)}개 그룹")
+    return grouped
+
+
+def aggregate_financial_gl(df):
+    """
+    재무식 드릴다운 — 연결계정과목 × G/L 계정 설명별 월별 집계 (직접/영업 구분 없음).
+    반환: 연월, 사업부, 연결계정과목, gl설명, 금액
+    """
+    empty_cols = ['연월', '사업부', '연결계정과목', 'gl설명', '금액']
+    if df.empty or '연결계정과목' not in df.columns or 'G/L 계정 설명' not in df.columns:
+        return pd.DataFrame(columns=empty_cols)
+
+    d = df[df['연결계정과목'] != FINANCIAL_EXCLUDED].copy()
+    d['_gl'] = d['G/L 계정 설명'].fillna('').astype(str).str.strip()
+    d.loc[d['_gl'] == '', '_gl'] = '(미지정)'
+
+    grouped = d.groupby(
+        ['연월', '사업부', '연결계정과목', '_gl'], observed=False
+    ).agg({'금액(전표 통화)': 'sum'}).reset_index()
+    grouped.columns = empty_cols
+
+    print(f"  - 재무식 G/L 집계 완료: {len(grouped)}개 그룹")
+    return grouped
+
+
 def aggregate_gl_by_category(df):
     """
     aggregate_data()와 동일한 직접/영업 구분으로 대분류·G/L 계정 설명별 월별 집계.
@@ -538,6 +843,8 @@ def convert_to_hierarchical_json(
     salary_breakdown=None,
     welfare_breakdown=None,
     gl_aggregated_df=None,
+    financial_df=None,
+    financial_gl_df=None,
 ):
     """계층적 JSON 변환. salary_breakdown / welfare_breakdown: 중분류 집계 결과."""
     print("\n[7/8] JSON 변환 중...")
@@ -601,8 +908,32 @@ def convert_to_hierarchical_json(
                 gl_bucket[ct][category][gl_label][month] = amount
         result["data"][bu]["대분류별GL설명"] = gl_bucket
 
+        # 재무식 (연결계정과목 기준, 직접/영업 구분 없음)
+        if financial_df is not None and not financial_df.empty:
+            fin_bucket = {}
+            bu_fin = financial_df[financial_df['사업부'] == bu]
+            for _, row in bu_fin.iterrows():
+                category = row['연결계정과목']
+                if category not in fin_bucket:
+                    fin_bucket[category] = {}
+                fin_bucket[category][row['연월']] = int(round(row['금액']))
+            result["data"][bu]["재무식"] = fin_bucket
+
+        if financial_gl_df is not None and not financial_gl_df.empty:
+            fin_gl_bucket = {}
+            bu_fin_gl = financial_gl_df[financial_gl_df['사업부'] == bu]
+            for _, row in bu_fin_gl.iterrows():
+                category = row['연결계정과목']
+                gl_label = row['gl설명']
+                if category not in fin_gl_bucket:
+                    fin_gl_bucket[category] = {}
+                if gl_label not in fin_gl_bucket[category]:
+                    fin_gl_bucket[category][gl_label] = {}
+                fin_gl_bucket[category][gl_label][row['연월']] = int(round(row['금액']))
+            result["data"][bu]["재무식GL설명"] = fin_gl_bucket
+
     print(f"  - JSON 변환 완료")
-    
+
     return result
 
 
@@ -667,6 +998,30 @@ def merge_json(existing, new_data):
                             eg[ct][category][gl_label] = {}
                         for month, amount in monthly_amounts.items():
                             eg[ct][category][gl_label][month] = amount
+        # 재무식 (연결계정과목)
+        new_fin = new_data.get("data", {}).get(bu, {}).get("재무식")
+        if new_fin:
+            if "재무식" not in existing["data"][bu]:
+                existing["data"][bu]["재무식"] = {}
+            ef = existing["data"][bu]["재무식"]
+            for category, monthly_amounts in new_fin.items():
+                if category not in ef:
+                    ef[category] = {}
+                for month, amount in monthly_amounts.items():
+                    ef[category][month] = amount
+        new_fin_gl = new_data.get("data", {}).get(bu, {}).get("재무식GL설명")
+        if new_fin_gl:
+            if "재무식GL설명" not in existing["data"][bu]:
+                existing["data"][bu]["재무식GL설명"] = {}
+            efg = existing["data"][bu]["재무식GL설명"]
+            for category, gl_map in new_fin_gl.items():
+                if category not in efg:
+                    efg[category] = {}
+                for gl_label, monthly_amounts in gl_map.items():
+                    if gl_label not in efg[category]:
+                        efg[category][gl_label] = {}
+                    for month, amount in monthly_amounts.items():
+                        efg[category][gl_label][month] = amount
     return existing
 
 
@@ -1042,7 +1397,7 @@ def main():
     
     try:
         # 1. 마스터 파일 로드
-        cost_center_master, account_master = load_master_files()
+        cost_center_master, account_master, account_mapping = load_master_files()
         
         existing_months = None
         existing_json = None
@@ -1060,17 +1415,44 @@ def main():
             cost_df = clean_and_filter_data(cost_df)
             
             # 4. 마스터 조인
-            cost_df = join_with_masters(cost_df, cost_center_master, account_master)
-            
+            cost_df = join_with_masters(
+                cost_df, cost_center_master, account_master, account_mapping
+            )
+
             # 5. 분석 대상 필터링
             cost_df = filter_target_business_units(cost_df)
-            
+
             # 6. 집계
-            aggregated_df = aggregate_data(cost_df)
-            gl_aggregated_df = aggregate_gl_by_category(cost_df)
-            salary_breakdown = aggregate_salary_subcategories(cost_df)
-            welfare_breakdown = aggregate_welfare_subcategories(cost_df)
-            
+            # 관리식은 맵핑의 `관리`='사용' 계정만 (예: 대리상지원금 제외)
+            if '_관리포함' in cost_df.columns:
+                mgmt_df = cost_df[cost_df['_관리포함']]
+                dropped = len(cost_df) - len(mgmt_df)
+                if dropped:
+                    amt = cost_df.loc[~cost_df['_관리포함'], '금액(전표 통화)'].sum()
+                    print(f"  - 관리식 제외: {dropped:,}건 / {amt:,.0f} 위안")
+            else:
+                mgmt_df = cost_df
+
+            aggregated_df = aggregate_data(mgmt_df)
+            gl_aggregated_df = aggregate_gl_by_category(mgmt_df)
+            salary_breakdown = aggregate_salary_subcategories(mgmt_df)
+            welfare_breakdown = aggregate_welfare_subcategories(mgmt_df)
+            financial_df = aggregate_financial_data(cost_df)
+            financial_gl_df = aggregate_financial_gl(cost_df)
+
+            # IFRS 조정분개 (재무식 전용) — 분기 누적 파일을 증분으로 변환해 반영
+            adjustments = load_adjustment_entries(
+                account_mapping['by_pkg'] if account_mapping else None
+            )
+            # 증분 모드는 이번에 처리한 월만 (전체 반영은 --full 에서)
+            allowed = None if is_full else set(months)
+            if not is_full and adjustments:
+                skipped = sorted(set(adjustments) - set(months))
+                if skipped:
+                    print(f"  [증분] 조정분개 미반영 월: {skipped} — 변경 시 --full 실행 필요")
+            financial_df = apply_adjustments(financial_df, adjustments, allowed)
+            financial_gl_df = apply_adjustments_gl(financial_gl_df, adjustments, allowed)
+
             # 7. JSON 변환
             new_json = convert_to_hierarchical_json(
                 aggregated_df,
@@ -1078,6 +1460,8 @@ def main():
                 salary_breakdown,
                 welfare_breakdown,
                 gl_aggregated_df,
+                financial_df,
+                financial_gl_df,
             )
             
             # 8. 병합 후 저장 (증분 모드면 기존 + 새 데이터)

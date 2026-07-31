@@ -20,7 +20,25 @@ import {
   sumCorporateStoreHeadcountSnapshot,
 } from '@/lib/corporate-headcount';
 import { buildSalarySubKpiCardModel } from '@/lib/salary-sub-kpi';
-import { BUSINESS_UNITS, CostData, HeadcountData, RetailSalesData, StoreHeadcountData } from '@/lib/types';
+import {
+  BUSINESS_UNITS,
+  CostBasis,
+  CostData,
+  HeadcountData,
+  RetailSalesResponse,
+  StoreHeadcountData,
+  ViewMode,
+} from '@/lib/types';
+import ExchangeRateTable from '@/components/ExchangeRateTable';
+import { type Currency, type ExchangeRateData } from '@/lib/exchange-rates';
+import {
+  VIEW_MODES,
+  buildPeriod,
+  convertCategoryDataToKrw,
+  isQuarterView,
+  periodHasData,
+  rateForMonth,
+} from '@/lib/period';
 import { mergeCorporateBusinessUnitCosts, isCorporateBusinessUnitSlug } from '@/lib/corporate-cost-merge';
 import {
   buildDetailKpiMetrics,
@@ -30,8 +48,10 @@ import {
   loadCostData,
   isDataEmpty,
   loadHeadcountData,
-  loadRetailSalesData,
+  loadExchangeRates,
+  loadRetailSales,
   loadStoreHeadcountData,
+  toRetailSalesData,
 } from '@/lib/data-loader';
 import { getDetailChartRollingMonths } from '@/lib/rolling-months';
 
@@ -53,8 +73,14 @@ export default function BusinessUnitDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState('');
   const [costType, setCostType] = useState<CostSide>('영업비');
-  const [retailMonth, setRetailMonth] = useState<RetailSalesData | null>(null);
-  const [retailYtd, setRetailYtd] = useState<RetailSalesData | null>(null);
+  // 홈 대시보드와 동일한 조회 컨트롤
+  const [viewMode, setViewMode] = useState<ViewMode>('당월');
+  const [costBasis, setCostBasis] = useState<CostBasis>('관리식');
+  const [currency, setCurrency] = useState<Currency>('CNY');
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRateData | null>(null);
+  const [rateTableOpen, setRateTableOpen] = useState(false);
+  const [showPrevYearAmount, setShowPrevYearAmount] = useState(false);
+  const [retailResponse, setRetailResponse] = useState<RetailSalesResponse | null>(null);
   const [retailLoading, setRetailLoading] = useState(false);
   const [headcountData, setHeadcountData] = useState<HeadcountData | null>(null);
   const [storeHeadcountData, setStoreHeadcountData] = useState<StoreHeadcountData | null>(null);
@@ -67,10 +93,11 @@ export default function BusinessUnitDetailPage() {
     async function run() {
       try {
         setLoading(true);
-        const [costData, headcount, storeHc] = await Promise.all([
+        const [costData, headcount, storeHc, rates] = await Promise.all([
           loadCostData(),
           loadHeadcountData(),
           loadStoreHeadcountData(),
+          loadExchangeRates(),
         ]);
         if (cancelled) return;
         if (isDataEmpty(costData)) {
@@ -81,6 +108,7 @@ export default function BusinessUnitDetailPage() {
         setData(costData);
         setHeadcountData(headcount);
         setStoreHeadcountData(storeHc);
+        setExchangeRates(rates);
         const months = costData.metadata.months;
         if (months.length > 0) {
           setSelectedMonth(prev => prev || months[months.length - 1]);
@@ -105,19 +133,13 @@ export default function BusinessUnitDetailPage() {
     async function fetchRetail() {
       setRetailLoading(true);
       try {
-        const [m, y] = await Promise.all([
-          loadRetailSalesData(selectedMonth, '당월'),
-          loadRetailSalesData(selectedMonth, '누적(YTD)'),
-        ]);
+        // 당월·YTD가 한 응답에 함께 오므로 호출 1회
+        const retail = await loadRetailSales(selectedMonth);
         if (cancelled) return;
-        setRetailMonth(m);
-        setRetailYtd(y);
+        setRetailResponse(retail);
       } catch (e) {
         console.error(e);
-        if (!cancelled) {
-          setRetailMonth(null);
-          setRetailYtd(null);
-        }
+        if (!cancelled) setRetailResponse(null);
       } finally {
         if (!cancelled) setRetailLoading(false);
       }
@@ -127,6 +149,15 @@ export default function BusinessUnitDetailPage() {
       cancelled = true;
     };
   }, [selectedMonth]);
+
+  const retailMonth = useMemo(
+    () => toRetailSalesData(retailResponse, '당월'),
+    [retailResponse]
+  );
+  const retailYtd = useMemo(
+    () => toRetailSalesData(retailResponse, '누적(YTD)'),
+    [retailResponse]
+  );
 
   const buCosts = useMemo(() => {
     if (!data) return undefined;
@@ -140,28 +171,66 @@ export default function BusinessUnitDetailPage() {
     [selectedMonth]
   );
 
+  const isFinancial = costBasis === '재무식';
+
+  /** 표에 쓸 원본(위안) 데이터 — 재무식이면 연결계정과목 */
   const categoryData = useMemo(() => {
     if (!buCosts) return {};
+    if (isFinancial) return buCosts.재무식 ?? {};
     return costType === '직접비' ? buCosts.직접비 : buCosts.영업비;
-  }, [buCosts, costType]);
+  }, [buCosts, costType, isFinancial]);
 
+  /** 차트용 — 원화면 각 달의 월평균 환율로 환산한 사본 */
+  const chartCategoryData = useMemo(
+    () =>
+      isFinancial && currency === 'KRW'
+        ? convertCategoryDataToKrw(categoryData, exchangeRates)
+        : categoryData,
+    [categoryData, isFinancial, currency, exchangeRates]
+  );
+
+  const period = useMemo(
+    () => buildPeriod(selectedMonth, viewMode),
+    [selectedMonth, viewMode]
+  );
+
+  const rateColumnLabel: '월평균' | '기간평균' =
+    viewMode === '당월' ? '월평균' : '기간평균';
+  const appliedRate = useMemo(
+    () => rateForMonth(exchangeRates, period.endMonth, rateColumnLabel),
+    [exchangeRates, period.endMonth, rateColumnLabel]
+  );
+  const effectiveCurrency: Currency = isFinancial ? currency : 'CNY';
+  const monthOptionsAll = data?.metadata.months ?? [];
+  const disabledViewModes = useMemo(
+    () =>
+      VIEW_MODES.filter(
+        mode =>
+          isQuarterView(mode) &&
+          !periodHasData(buildPeriod(selectedMonth, mode), monthOptionsAll)
+      ),
+    [selectedMonth, monthOptionsAll]
+  );
+
+  const legendCostType = isFinancial ? undefined : costType;
   const categoryLegendKey = useMemo(
-    () => getSortedCategoriesForMonths(categoryData, monthsForChart, costType).join('|'),
-    [categoryData, monthsForChart, costType]
+    () => getSortedCategoriesForMonths(chartCategoryData, monthsForChart, legendCostType).join('|'),
+    [chartCategoryData, monthsForChart, legendCostType]
   );
 
   useLayoutEffect(() => {
     if (!isCorporate) return;
-    const cats = getSortedCategoriesForMonths(categoryData, monthsForChart, costType);
+    const cats = getSortedCategoriesForMonths(chartCategoryData, monthsForChart, legendCostType);
     setChartLegendSelected(new Set(cats));
-  }, [isCorporate, categoryLegendKey, categoryData, monthsForChart, costType]);
+  }, [isCorporate, categoryLegendKey, chartCategoryData, monthsForChart, legendCostType]);
 
   const glByCategory = useMemo(() => {
+    if (isFinancial) return buCosts?.재무식GL설명;
     if (!buCosts?.대분류별GL설명) return undefined;
     return costType === '직접비'
       ? buCosts.대분류별GL설명.직접비
       : buCosts.대분류별GL설명.영업비;
-  }, [buCosts, costType]);
+  }, [buCosts, costType, isFinancial]);
 
   const displayName = isCorporateBusinessUnitSlug(decodedId)
     ? '법인'
@@ -175,9 +244,22 @@ export default function BusinessUnitDetailPage() {
       retailYtd,
       selectedMonth,
       detailPageRetailKpiMode(buKey),
-      costType
+      isFinancial ? undefined : costType,
+      { viewMode, costBasis, currency: effectiveCurrency, exchangeRates }
     );
-  }, [buCosts, buKey, selectedMonth, retailMonth, retailYtd, costType]);
+  }, [
+    buCosts,
+    buKey,
+    selectedMonth,
+    retailMonth,
+    retailYtd,
+    costType,
+    viewMode,
+    costBasis,
+    isFinancial,
+    effectiveCurrency,
+    exchangeRates,
+  ]);
 
   const salarySubKpiCards = useMemo(() => {
     if (!isCorporate || !data || !buCosts || !selectedMonth) return [];
@@ -294,6 +376,28 @@ export default function BusinessUnitDetailPage() {
         months={monthOptions}
         selectedMonth={selectedMonth}
         onMonthChange={setSelectedMonth}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        disabledViewModes={disabledViewModes}
+        costBasis={costBasis}
+        onCostBasisChange={setCostBasis}
+        currency={currency}
+        onCurrencyChange={setCurrency}
+        onOpenRateTable={() => setRateTableOpen(true)}
+        appliedRate={appliedRate}
+        appliedRateLabel={rateColumnLabel}
+        showPrevYearAmount={showPrevYearAmount}
+        onTogglePrevYearAmount={() => setShowPrevYearAmount(v => !v)}
+      />
+
+      <ExchangeRateTable
+        open={rateTableOpen}
+        onClose={() => setRateTableOpen(false)}
+        data={exchangeRates}
+        onSaved={setExchangeRates}
+        highlightMonth={period.endMonth}
+        highlightColumn={rateColumnLabel}
+        months={monthOptions}
       />
 
       <main className="max-w-[min(100vw,2880px)] mx-auto px-4 py-6">
@@ -302,8 +406,10 @@ export default function BusinessUnitDetailPage() {
             metrics={detailKpiMetrics}
             retailLoading={retailLoading}
             title={kpiTitle}
-            activeCostSide={costType}
+            activeCostSide={isFinancial ? undefined : costType}
             ariaLabel={kpiAriaLabel}
+            currency={effectiveCurrency}
+            periodLabel={viewMode === '누적(YTD)' ? '당월' : viewMode}
           />
         )}
         {showSalarySubKpiStrip && (
@@ -311,10 +417,12 @@ export default function BusinessUnitDetailPage() {
         )}
         {monthsForChart.length > 0 && (
           <MonthlyCostTrendChart
-            categoryData={categoryData}
+            categoryData={chartCategoryData}
             months={monthsForChart}
             costType={costType}
             onCostTypeChange={setCostType}
+            costBasis={costBasis}
+            currency={effectiveCurrency}
             highlightMonthKey={selectedMonth}
             legendSelected={isCorporate ? chartLegendSelected : undefined}
             onLegendSelectedChange={isCorporate ? setChartLegendSelected : undefined}
@@ -327,6 +435,10 @@ export default function BusinessUnitDetailPage() {
             glByCategory={glByCategory}
             selectedMonth={selectedMonth}
             costSide={costType}
+            costBasis={costBasis}
+            viewMode={viewMode}
+            currency={effectiveCurrency}
+            exchangeRates={exchangeRates}
           />
         )}
       </main>

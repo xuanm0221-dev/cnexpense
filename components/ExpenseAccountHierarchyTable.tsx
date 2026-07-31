@@ -5,29 +5,49 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
-import type { CategoryData, GlBreakdownByCategory, MonthlyAmounts, ViewMode } from '@/lib/types';
+import type {
+  CategoryData,
+  CostBasis,
+  GlBreakdownByCategory,
+  MonthlyAmounts,
+  ViewMode,
+} from '@/lib/types';
 import {
   calculateYTD,
-  calculateYoY,
   getAmountForMonth,
-  getPreviousYearMonth,
   getSortedCategories,
-  yoYDeltaToIndexPercent,
+  getSortedFinancialCategories,
 } from '@/lib/calculations';
-import { toThousandCNY } from '@/utils/formatters';
+import {
+  buildPeriod,
+  fromMonthly,
+  isQuarterView,
+  periodCny,
+  periodValue,
+  previousYearPeriod,
+} from '@/lib/period';
+import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
+import { formatAmount, formatDelta, yoyIndex } from '@/utils/formatters';
+
+/** 행 지표 — 금액은 표시 통화 기준(환율 미입력 시 null) */
+type RowMetrics = {
+  curr: number | null;
+  prev: number | null;
+  deltaText: string;
+  deltaPositive: boolean;
+  yoyIdx: number | null;
+};
 
 type CostSide = '직접비' | '영업비';
 
-function formatDeltaK(deltaK: number | 'N/A'): string {
-  if (deltaK === 'N/A') return '—';
-  const abs = Math.abs(deltaK).toLocaleString('en-US');
-  if (deltaK > 0) return `+${abs}K`;
-  if (deltaK < 0) return `△${abs}K`;
-  return '0K';
+/** '+1,234K' → 그대로, 음수는 △ 표기 */
+function deltaDisplay(text: string | null): string {
+  if (text === null) return '—';
+  return text.startsWith('-') ? `△${text.slice(1)}` : text;
 }
 
-function yoyPctCell(yoyIdx: number | 'N/A') {
-  if (yoyIdx === 'N/A') {
+function yoyPctCell(yoyIdx: number | null) {
+  if (yoyIdx === null) {
     return <span className="text-slate-400">—</span>;
   }
   return (
@@ -57,12 +77,19 @@ function sortGlKeys(
   });
 }
 
+
 export interface ExpenseAccountHierarchyTableProps {
   title?: string;
   categoryData: CategoryData;
   glByCategory: GlBreakdownByCategory | undefined;
   selectedMonth: string;
   costSide: CostSide;
+  /** 관리식(대분류) / 재무식(연결계정과목) */
+  costBasis?: CostBasis;
+  /** 조회 기간 — 헤더 탭에서 제어 */
+  viewMode: ViewMode;
+  currency?: Currency;
+  exchangeRates?: ExchangeRateData | null;
 }
 
 export default function ExpenseAccountHierarchyTable({
@@ -71,8 +98,16 @@ export default function ExpenseAccountHierarchyTable({
   glByCategory,
   selectedMonth,
   costSide,
+  costBasis = '관리식',
+  viewMode,
+  currency = 'CNY',
+  exchangeRates = null,
 }: ExpenseAccountHierarchyTableProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('당월');
+  const isFinancial = costBasis === '재무식';
+  const period = useMemo(() => buildPeriod(selectedMonth, viewMode), [selectedMonth, viewMode]);
+  const prevPeriod = useMemo(() => previousYearPeriod(period), [period]);
+  /** 분기는 당월과 같은 4지표 레이아웃, 누적(YTD)만 계획 컬럼 레이아웃 */
+  const useYtdLayout = viewMode === '누적(YTD)';
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const [yStr, mStr] = selectedMonth.split('-');
@@ -81,15 +116,17 @@ export default function ExpenseAccountHierarchyTable({
   const prevYearStr = (parseInt(yStr, 10) - 1).toString();
   const currYearStr = yStr;
 
+  const periodAmountOf = useCallback(
+    (monthly: MonthlyAmounts) => periodCny(fromMonthly(monthly), period),
+    [period]
+  );
+
   const categories = useMemo(
     () =>
-      getSortedCategories(
-        categoryData,
-        selectedMonth,
-        viewMode === '누적(YTD)',
-        costSide
-      ),
-    [categoryData, selectedMonth, viewMode, costSide]
+      isFinancial
+        ? getSortedFinancialCategories(categoryData, selectedMonth, false, periodAmountOf)
+        : getSortedCategories(categoryData, selectedMonth, false, costSide, periodAmountOf),
+    [categoryData, selectedMonth, costSide, isFinancial, periodAmountOf]
   );
 
   const toggleCategory = useCallback((category: string) => {
@@ -114,44 +151,35 @@ export default function ExpenseAccountHierarchyTable({
     setExpanded(new Set());
   }, []);
 
-  const isYtd = viewMode === '누적(YTD)';
-
   const metricsForMonthly = useCallback(
-    (monthly: MonthlyAmounts) => {
-      const curr = isYtd ? calculateYTD(monthly, selectedMonth) : getAmountForMonth(monthly, selectedMonth);
-      const prevMonth = getPreviousYearMonth(selectedMonth);
-      const prev = isYtd ? calculateYTD(monthly, prevMonth) : getAmountForMonth(monthly, prevMonth);
-      const yoy = calculateYoY(monthly, selectedMonth, isYtd);
-      const yoyIdx = yoYDeltaToIndexPercent(yoy.pct);
-      return { curr, prev, yoy, yoyIdx };
+    (monthly: MonthlyAmounts): RowMetrics => {
+      const acc = fromMonthly(monthly);
+      const curr = periodValue(acc, period, currency, exchangeRates);
+      const prev = periodValue(acc, prevPeriod, currency, exchangeRates);
+      const deltaRaw = formatDelta(curr, prev, currency);
+      return {
+        curr,
+        prev,
+        deltaText: deltaDisplay(deltaRaw),
+        deltaPositive: curr !== null && prev !== null && curr - prev > 0,
+        yoyIdx: yoyIndex(curr, prev),
+      };
     },
-    [selectedMonth, isYtd]
+    [period, prevPeriod, currency, exchangeRates]
   );
 
-  const grandTotal = useMemo(() => {
-    let curr = 0;
-    let prev = 0;
+  const grandTotal = useMemo((): RowMetrics => {
+    // 표시 중인 카테고리를 합친 가상 시계열로 한 번에 계산 (분기 차감·환산 규칙 동일 적용)
+    const synthetic: MonthlyAmounts = {};
     for (const c of categories) {
       const m = categoryData[c];
       if (!m) continue;
-      curr += isYtd ? calculateYTD(m, selectedMonth) : getAmountForMonth(m, selectedMonth);
-      const pm = getPreviousYearMonth(selectedMonth);
-      prev += isYtd ? calculateYTD(m, pm) : getAmountForMonth(m, pm);
-    }
-    const yoyRes = (() => {
-      const synthetic: MonthlyAmounts = {};
-      for (const c of categories) {
-        const m = categoryData[c];
-        if (!m) continue;
-        for (const k of Object.keys(m)) {
-          synthetic[k] = (synthetic[k] || 0) + m[k];
-        }
+      for (const k of Object.keys(m)) {
+        synthetic[k] = (synthetic[k] || 0) + m[k];
       }
-      return calculateYoY(synthetic, selectedMonth, isYtd);
-    })();
-    const yoyIdx = yoYDeltaToIndexPercent(yoyRes.pct);
-    return { curr, prev, yoy: yoyRes, yoyIdx };
-  }, [categories, categoryData, selectedMonth, isYtd]);
+    }
+    return metricsForMonthly(synthetic);
+  }, [categories, categoryData, metricsForMonthly]);
 
   return (
     <section
@@ -169,28 +197,9 @@ export default function ExpenseAccountHierarchyTable({
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div
-            className="inline-flex rounded-lg bg-slate-900/80 p-0.5 ring-1 ring-white/10"
-            role="tablist"
-            aria-label="당월 또는 누적 보기"
-          >
-            {(['당월', '누적(YTD)'] as const).map(mode => (
-              <button
-                key={mode}
-                type="button"
-                role="tab"
-                aria-selected={viewMode === mode}
-                onClick={() => setViewMode(mode)}
-                className={`px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-medium rounded-md transition-colors ${
-                  viewMode === mode
-                    ? 'bg-white text-slate-900 shadow'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                {mode === '누적(YTD)' ? '누적(YTD)' : '당월'}
-              </button>
-            ))}
-          </div>
+          <span className="text-[11px] sm:text-xs px-2 py-1 rounded-md bg-slate-700/70 text-slate-100 ring-1 ring-white/10">
+            {viewMode}
+          </span>
           <button
             type="button"
             onClick={expandAll}
@@ -209,7 +218,7 @@ export default function ExpenseAccountHierarchyTable({
       </div>
 
       <div className="overflow-x-auto">
-        {viewMode === '당월' ? (
+        {!useYtdLayout ? (
           <table className="min-w-[720px] w-full text-xs sm:text-sm border-collapse">
             <thead>
               <tr className="bg-slate-100 text-slate-700">
@@ -237,7 +246,7 @@ export default function ExpenseAccountHierarchyTable({
               </tr>
             </thead>
             <tbody className="text-slate-800">
-              <GrandTotalRowMonthly grand={grandTotal} />
+              <GrandTotalRowMonthly grand={grandTotal} currency={currency} />
               {categories.map(category => (
                 <CategoryBlockMonthly
                   key={category}
@@ -248,6 +257,7 @@ export default function ExpenseAccountHierarchyTable({
                   onToggle={() => toggleCategory(category)}
                   selectedMonth={selectedMonth}
                   metricsForMonthly={metricsForMonthly}
+                  currency={currency}
                 />
               ))}
             </tbody>
@@ -321,7 +331,7 @@ export default function ExpenseAccountHierarchyTable({
               </tr>
             </thead>
             <tbody className="text-slate-800">
-              <GrandTotalRowYtd grand={grandTotal} />
+              <GrandTotalRowYtd grand={grandTotal} currency={currency} />
               {categories.map(category => (
                 <CategoryBlockYtd
                   key={category}
@@ -332,6 +342,7 @@ export default function ExpenseAccountHierarchyTable({
                   onToggle={() => toggleCategory(category)}
                   selectedMonth={selectedMonth}
                   metricsForMonthly={metricsForMonthly}
+                  currency={currency}
                 />
               ))}
             </tbody>
@@ -344,27 +355,24 @@ export default function ExpenseAccountHierarchyTable({
 
 function GrandTotalRowMonthly({
   grand,
+  currency,
 }: {
-  grand: {
-    curr: number;
-    prev: number;
-    yoy: ReturnType<typeof calculateYoY>;
-    yoyIdx: number | 'N/A';
-  };
+  grand: RowMetrics;
+  currency: Currency;
 }) {
   return (
     <tr className="bg-violet-50/90 font-semibold border-b border-slate-200">
       <td className="px-3 py-2 sticky left-0 bg-violet-50/95 z-10">전체 합계</td>
       <td className="text-right tabular-nums px-2 py-2 border-l border-slate-200">
-        {toThousandCNY(grand.prev)}
+        {formatAmount(grand.prev, currency)}
       </td>
-      <td className="text-right tabular-nums px-2 py-2">{toThousandCNY(grand.curr)}</td>
+      <td className="text-right tabular-nums px-2 py-2">{formatAmount(grand.curr, currency)}</td>
       <td
         className={`text-right tabular-nums px-2 py-2 ${
-          grand.yoy.deltaK !== 'N/A' && grand.yoy.deltaK > 0 ? 'text-rose-600' : 'text-sky-700'
+          grand.deltaPositive ? 'text-rose-600' : 'text-sky-700'
         }`}
       >
-        {formatDeltaK(grand.yoy.deltaK)}
+        {grand.deltaText}
       </td>
       <td className="text-right px-2 py-2">{yoyPctCell(grand.yoyIdx)}</td>
       <td className="px-3 py-2 text-slate-400 border-l border-slate-200">—</td>
@@ -374,27 +382,24 @@ function GrandTotalRowMonthly({
 
 function GrandTotalRowYtd({
   grand,
+  currency,
 }: {
-  grand: {
-    curr: number;
-    prev: number;
-    yoy: ReturnType<typeof calculateYoY>;
-    yoyIdx: number | 'N/A';
-  };
+  grand: RowMetrics;
+  currency: Currency;
 }) {
   return (
     <tr className="bg-violet-50/90 font-semibold border-b border-slate-200">
       <td className="px-2 py-2 sticky left-0 bg-violet-50/95 z-10">전체 합계</td>
       <td className="text-right tabular-nums px-1 py-2 border-l border-slate-200">
-        {toThousandCNY(grand.prev)}
+        {formatAmount(grand.prev, currency)}
       </td>
-      <td className="text-right tabular-nums px-1 py-2">{toThousandCNY(grand.curr)}</td>
+      <td className="text-right tabular-nums px-1 py-2">{formatAmount(grand.curr, currency)}</td>
       <td
         className={`text-right tabular-nums px-1 py-2 ${
-          grand.yoy.deltaK !== 'N/A' && grand.yoy.deltaK > 0 ? 'text-rose-600' : 'text-sky-700'
+          grand.deltaPositive ? 'text-rose-600' : 'text-sky-700'
         }`}
       >
-        {formatDeltaK(grand.yoy.deltaK)}
+        {grand.deltaText}
       </td>
       <td className="text-right px-1 py-2">{yoyPctCell(grand.yoyIdx)}</td>
       <td className="text-right px-1 py-2">{planStub()}</td>
@@ -418,6 +423,7 @@ function CategoryBlockMonthly({
   onToggle,
   selectedMonth,
   metricsForMonthly,
+  currency,
 }: {
   category: string;
   monthly: MonthlyAmounts;
@@ -425,14 +431,10 @@ function CategoryBlockMonthly({
   expanded: boolean;
   onToggle: () => void;
   selectedMonth: string;
-  metricsForMonthly: (m: MonthlyAmounts) => {
-    curr: number;
-    prev: number;
-    yoy: ReturnType<typeof calculateYoY>;
-    yoyIdx: number | 'N/A';
-  };
+  metricsForMonthly: (m: MonthlyAmounts) => RowMetrics;
+  currency: Currency;
 }) {
-  const { curr, prev, yoy, yoyIdx } = metricsForMonthly(monthly);
+  const { curr, prev, deltaText, deltaPositive, yoyIdx } = metricsForMonthly(monthly);
   const glKeys = glMap ? sortGlKeys(glMap, selectedMonth, false) : [];
   const hasChildren = glKeys.length > 0;
 
@@ -457,14 +459,14 @@ function CategoryBlockMonthly({
             <span className="font-medium break-words">{category}</span>
           </button>
         </td>
-        <td className="text-right tabular-nums px-2 py-2 border-l border-slate-100">{toThousandCNY(prev)}</td>
-        <td className="text-right tabular-nums px-2 py-2">{toThousandCNY(curr)}</td>
+        <td className="text-right tabular-nums px-2 py-2 border-l border-slate-100">{formatAmount(prev, currency)}</td>
+        <td className="text-right tabular-nums px-2 py-2">{formatAmount(curr, currency)}</td>
         <td
           className={`text-right tabular-nums px-2 py-2 ${
-            yoy.deltaK !== 'N/A' && yoy.deltaK > 0 ? 'text-rose-600' : 'text-sky-700'
+            deltaPositive ? 'text-rose-600' : 'text-sky-700'
           }`}
         >
-          {formatDeltaK(yoy.deltaK)}
+          {deltaText}
         </td>
         <td className="text-right px-2 py-2">{yoyPctCell(yoyIdx)}</td>
         <td className="px-3 py-2 text-slate-400 text-[11px] border-l border-slate-100 align-top">—</td>
@@ -483,15 +485,15 @@ function CategoryBlockMonthly({
                 {gl}
               </td>
               <td className="text-right tabular-nums px-2 py-1.5 border-l border-slate-100">
-                {toThousandCNY(row.prev)}
+                {formatAmount(row.prev, currency)}
               </td>
-              <td className="text-right tabular-nums px-2 py-1.5">{toThousandCNY(row.curr)}</td>
+              <td className="text-right tabular-nums px-2 py-1.5">{formatAmount(row.curr, currency)}</td>
               <td
                 className={`text-right tabular-nums px-2 py-1.5 ${
-                  row.yoy.deltaK !== 'N/A' && row.yoy.deltaK > 0 ? 'text-rose-600' : 'text-sky-700'
+                  row.deltaPositive ? 'text-rose-600' : 'text-sky-700'
                 }`}
               >
-                {formatDeltaK(row.yoy.deltaK)}
+                {row.deltaText}
               </td>
               <td className="text-right px-2 py-1.5">{yoyPctCell(row.yoyIdx)}</td>
               <td className="px-3 py-1.5 text-slate-400 border-l border-slate-100">—</td>
@@ -510,6 +512,7 @@ function CategoryBlockYtd({
   onToggle,
   selectedMonth,
   metricsForMonthly,
+  currency,
 }: {
   category: string;
   monthly: MonthlyAmounts;
@@ -517,14 +520,10 @@ function CategoryBlockYtd({
   expanded: boolean;
   onToggle: () => void;
   selectedMonth: string;
-  metricsForMonthly: (m: MonthlyAmounts) => {
-    curr: number;
-    prev: number;
-    yoy: ReturnType<typeof calculateYoY>;
-    yoyIdx: number | 'N/A';
-  };
+  metricsForMonthly: (m: MonthlyAmounts) => RowMetrics;
+  currency: Currency;
 }) {
-  const { curr, prev, yoy, yoyIdx } = metricsForMonthly(monthly);
+  const { curr, prev, deltaText, deltaPositive, yoyIdx } = metricsForMonthly(monthly);
   const glKeys = glMap ? sortGlKeys(glMap, selectedMonth, true) : [];
   const hasChildren = glKeys.length > 0;
 
@@ -549,14 +548,14 @@ function CategoryBlockYtd({
             <span className="font-medium break-words">{category}</span>
           </button>
         </td>
-        <td className="text-right tabular-nums px-1 py-2 border-l border-slate-100">{toThousandCNY(prev)}</td>
-        <td className="text-right tabular-nums px-1 py-2">{toThousandCNY(curr)}</td>
+        <td className="text-right tabular-nums px-1 py-2 border-l border-slate-100">{formatAmount(prev, currency)}</td>
+        <td className="text-right tabular-nums px-1 py-2">{formatAmount(curr, currency)}</td>
         <td
           className={`text-right tabular-nums px-1 py-2 ${
-            yoy.deltaK !== 'N/A' && yoy.deltaK > 0 ? 'text-rose-600' : 'text-sky-700'
+            deltaPositive ? 'text-rose-600' : 'text-sky-700'
           }`}
         >
-          {formatDeltaK(yoy.deltaK)}
+          {deltaText}
         </td>
         <td className="text-right px-1 py-2">{yoyPctCell(yoyIdx)}</td>
         <td className="text-right px-1 py-2">{planStub()}</td>
@@ -581,15 +580,15 @@ function CategoryBlockYtd({
             >
               <td className="pl-9 pr-2 py-1.5 sticky left-0 bg-slate-50/95 z-10 break-words">{gl}</td>
               <td className="text-right tabular-nums px-1 py-1.5 border-l border-slate-100">
-                {toThousandCNY(row.prev)}
+                {formatAmount(row.prev, currency)}
               </td>
-              <td className="text-right tabular-nums px-1 py-1.5">{toThousandCNY(row.curr)}</td>
+              <td className="text-right tabular-nums px-1 py-1.5">{formatAmount(row.curr, currency)}</td>
               <td
                 className={`text-right tabular-nums px-1 py-1.5 ${
-                  row.yoy.deltaK !== 'N/A' && row.yoy.deltaK > 0 ? 'text-rose-600' : 'text-sky-700'
+                  row.deltaPositive ? 'text-rose-600' : 'text-sky-700'
                 }`}
               >
-                {formatDeltaK(row.yoy.deltaK)}
+                {row.deltaText}
               </td>
               <td className="text-right px-1 py-1.5">{yoyPctCell(row.yoyIdx)}</td>
               <td className="text-right px-1 py-1.5">{planStub()}</td>

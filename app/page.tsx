@@ -7,22 +7,38 @@
 import { useState, useEffect, useMemo } from 'react';
 import DashboardHeader from '@/components/DashboardHeader';
 import BusinessUnitCard from '@/components/BusinessUnitCard';
-import { CostData, ViewMode, CostType, BUSINESS_UNITS, HeadcountData, StoreHeadcountData, RetailSalesData } from '@/lib/types';
+import { CostBasis, CostData, ViewMode, CostType, BUSINESS_UNITS, HeadcountData, StoreHeadcountData, RetailSalesResponse } from '@/lib/types';
 import {
   CORPORATE_BUSINESS_UNIT_IDS,
   mergeCorporateBusinessUnitCosts,
 } from '@/lib/corporate-cost-merge';
+import { CORPORATE_RETAIL_UNIT } from '@/lib/retail-brands';
+import ExchangeRateTable from '@/components/ExchangeRateTable';
+import { type Currency, type ExchangeRateData } from '@/lib/exchange-rates';
 import {
-  buildCorporateRetailSalesByMonth,
-  sumCorporateRetailSales,
-} from '@/lib/corporate-retail';
-import { loadCostData, isDataEmpty, loadHeadcountData, loadStoreHeadcountData, loadRetailSalesData } from '@/lib/data-loader';
+  VIEW_MODES,
+  buildPeriod,
+  isQuarterView,
+  periodHasData,
+  rateForMonth,
+} from '@/lib/period';
+import {
+  loadCostData,
+  isDataEmpty,
+  loadExchangeRates,
+  loadHeadcountData,
+  loadStoreHeadcountData,
+  loadRetailSales,
+  retailChannelsFor,
+  retailMetricsFor,
+  toRetailSalesData,
+} from '@/lib/data-loader';
 
 export default function HomePage() {
   const [data, setData] = useState<CostData | null>(null);
   const [headcountData, setHeadcountData] = useState<HeadcountData | null>(null);
   const [storeHeadcountData, setStoreHeadcountData] = useState<StoreHeadcountData | null>(null);
-  const [retailSalesData, setRetailSalesData] = useState<RetailSalesData | null>(null);
+  const [retailResponse, setRetailResponse] = useState<RetailSalesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -38,6 +54,18 @@ export default function HomePage() {
   // 직접비/영업비/전체 탭 (모든 카드 동기화)
   const [activeTab, setActiveTab] = useState<CostType>('전체');
 
+  // 집계 기준: 관리식(기본) / 재무식(연결계정과목)
+  const [costBasis, setCostBasis] = useState<CostBasis>('관리식');
+
+  // 통화 (재무식에서만 노출) + 환율표
+  const [currency, setCurrency] = useState<Currency>('CNY');
+  const [retailBaseResponse, setRetailBaseResponse] = useState<RetailSalesResponse | null>(null);
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRateData | null>(null);
+  const [rateTableOpen, setRateTableOpen] = useState(false);
+
+  // 재무식 표의 전년 금액 컬럼 (기본 숨김)
+  const [showPrevYearAmount, setShowPrevYearAmount] = useState(false);
+
   // 급여·복리비 중분류 토글 (모든 카드 동기화)
   const [salarySubExpanded, setSalarySubExpanded] = useState(false);
   const [welfareSubExpanded, setWelfareSubExpanded] = useState(false);
@@ -47,20 +75,22 @@ export default function HomePage() {
     async function fetchData() {
       try {
         setLoading(true);
-        const [costData, headcount, storeHeadcount] = await Promise.all([
+        const [costData, headcount, storeHeadcount, rates] = await Promise.all([
           loadCostData(),
           loadHeadcountData(),
           loadStoreHeadcountData(),
+          loadExchangeRates(),
         ]);
-        
+
         if (isDataEmpty(costData)) {
           setError('비용 데이터가 없습니다. Python 전처리 스크립트를 실행해주세요.');
           return;
         }
-        
+
         setData(costData);
         setHeadcountData(headcount);
         setStoreHeadcountData(storeHeadcount);
+        setExchangeRates(rates);
         
         // 가장 최근 월을 기본값으로 설정 (비용+인원수 통합 월 목록 사용)
         const costMonths = costData.metadata.months;
@@ -89,23 +119,71 @@ export default function HomePage() {
     return [...new Set([...costMonths, ...headcountMonths, ...storeMonths])].sort();
   }, [data, headcountData, storeHeadcountData]);
 
-  // 리테일 매출 데이터 로드 (selectedMonth, viewMode 변경 시)
+  // 조회 기간 (당월 / 누적 / 분기)
+  const period = useMemo(
+    () => buildPeriod(selectedMonth, viewMode),
+    [selectedMonth, viewMode]
+  );
+
+  /**
+   * 리테일 매출 로드.
+   * 분기는 API에 분기 개념이 없어 **분기말 YTD − 직전분기말 YTD** 로 만든다.
+   * (비용의 분기 계산 규칙과 동일)
+   */
   useEffect(() => {
-    if (!selectedMonth) return;
-    
+    if (!period.endMonth) return;
+    let cancelled = false;
+
     async function fetchRetailSales() {
       try {
-        const retailSales = await loadRetailSalesData(selectedMonth, viewMode);
-        setRetailSalesData(retailSales);
+        const [end, base] = await Promise.all([
+          loadRetailSales(period.endMonth),
+          period.baseMonth ? loadRetailSales(period.baseMonth) : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setRetailResponse(end);
+        setRetailBaseResponse(base);
       } catch (err) {
         console.error('리테일 매출 데이터 로드 실패:', err);
-        setRetailSalesData(null);
+        if (!cancelled) {
+          setRetailResponse(null);
+          setRetailBaseResponse(null);
+        }
       }
     }
-    
+
     fetchRetailSales();
-  }, [selectedMonth, viewMode]);
-  
+    return () => {
+      cancelled = true;
+    };
+  }, [period.endMonth, period.baseMonth]);
+
+  // 기간에 해당하는 월별 금액 맵 (위안) — 법인·경영지원 키 포함
+  const retailSalesData = useMemo(() => {
+    if (viewMode === '당월') return toRetailSalesData(retailResponse, '당월');
+    const end = toRetailSalesData(retailResponse, '누적(YTD)');
+    if (!isQuarterView(viewMode) || !period.baseMonth) return end;
+
+    // 분기 = 분기말 누적 − 직전분기말 누적 (당년·전년 각각)
+    const base = toRetailSalesData(retailBaseResponse, '누적(YTD)');
+    if (!end) return null;
+    if (!base) return end;
+
+    const out: typeof end = {};
+    for (const [unit, months] of Object.entries(end)) {
+      const baseMonths = base[unit] ?? {};
+      const merged: Record<string, number> = {};
+      for (const [m, v] of Object.entries(months)) {
+        // end 는 분기말 기준월 키, base 는 직전분기말 키 → 연도별로 대응시킨다
+        const year = m.split('-')[0];
+        const baseKey = Object.keys(baseMonths).find(k => k.startsWith(year));
+        merged[m] = v - (baseKey ? baseMonths[baseKey] : 0);
+      }
+      out[unit] = merged;
+    }
+    return out;
+  }, [retailResponse, retailBaseResponse, viewMode, period.baseMonth]);
+
   // 사무실 인원수 조회 헬퍼 함수
   const getOfficeHeadcount = (buId: string, month: string): number | null => {
     if (!headcountData || !headcountData[buId]) return null;
@@ -130,16 +208,38 @@ export default function HomePage() {
     return retailSalesData[buId];
   };
 
-  const corporateRetailSalesMemo = useMemo(() => {
-    if (!retailSalesData || !selectedMonth) return null;
-    return sumCorporateRetailSales(retailSalesData, selectedMonth);
-  }, [retailSalesData, selectedMonth]);
+  // 채널 분해 (직영 ON/OFF · 대리상 ON/OFF) — 카드 리테일매출 호버용
+  const getRetailChannels = (buId: string) =>
+    retailChannelsFor(retailResponse, buId, viewMode === '당월' ? '당월' : '누적(YTD)');
 
-  const corporateRetailSalesDataMemo = useMemo(
-    () => buildCorporateRetailSalesByMonth(retailSalesData),
-    [retailSalesData]
+  // 할인율 등 기간 지표
+  const getRetailMetrics = (buId: string) =>
+    retailMetricsFor(retailResponse, buId, viewMode === '당월' ? '당월' : '누적(YTD)');
+
+  /**
+   * 환산 환율 — 당월=월평균, 누적(YTD)=기간평균.
+   * 전년 동기간은 그 시점 환율로 환산해야 원화 기준 YoY가 맞다.
+   */
+  const rateColumnLabel: '월평균' | '기간평균' =
+    viewMode === '당월' ? '월평균' : '기간평균';
+  const appliedRate = useMemo(
+    () => rateForMonth(exchangeRates, period.endMonth, rateColumnLabel),
+    [exchangeRates, period.endMonth, rateColumnLabel]
   );
-  
+
+  /** 비용 데이터가 없는 분기는 탭 비활성화 */
+  const disabledViewModes = useMemo(
+    () =>
+      VIEW_MODES.filter(
+        mode =>
+          isQuarterView(mode) &&
+          !periodHasData(buildPeriod(selectedMonth, mode), mergedMonths)
+      ),
+    [selectedMonth, mergedMonths]
+  );
+  // 재무식이 아닐 때는 항상 위안 기준
+  const effectiveCurrency: Currency = costBasis === '재무식' ? currency : 'CNY';
+
   // 로딩 상태
   if (loading) {
     return (
@@ -196,6 +296,26 @@ export default function HomePage() {
         onViewModeChange={setViewMode}
         showOtherBU={showOtherBU}
         onToggleOtherBU={() => setShowOtherBU(!showOtherBU)}
+        disabledViewModes={disabledViewModes}
+        costBasis={costBasis}
+        onCostBasisChange={setCostBasis}
+        currency={currency}
+        onCurrencyChange={setCurrency}
+        onOpenRateTable={() => setRateTableOpen(true)}
+        appliedRate={appliedRate}
+        appliedRateLabel={rateColumnLabel}
+        showPrevYearAmount={showPrevYearAmount}
+        onTogglePrevYearAmount={() => setShowPrevYearAmount(v => !v)}
+      />
+
+      <ExchangeRateTable
+        open={rateTableOpen}
+        onClose={() => setRateTableOpen(false)}
+        data={exchangeRates}
+        onSaved={setExchangeRates}
+        highlightMonth={selectedMonth}
+        highlightColumn={rateColumnLabel}
+        months={mergedMonths}
       />
       
       {/* 사업부 카드 그리드 */}
@@ -275,10 +395,16 @@ export default function HomePage() {
                 storeHeadcount={corporateStoreHeadcount}
                 officeHeadcountData={corporateOfficeHeadcountData}
                 storeHeadcountData={corporateStoreHeadcountData}
-                retailSales={corporateRetailSalesMemo}
-                retailSalesData={corporateRetailSalesDataMemo}
+                retailSales={getRetailSales(CORPORATE_RETAIL_UNIT, period.endMonth)}
+                retailSalesData={getRetailSalesData(CORPORATE_RETAIL_UNIT)}
+                retailChannels={getRetailChannels(CORPORATE_RETAIL_UNIT)}
+                retailMetrics={getRetailMetrics(CORPORATE_RETAIL_UNIT)}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
+                costBasis={costBasis}
+                currency={effectiveCurrency}
+                exchangeRates={exchangeRates}
+                showPrevYearAmount={showPrevYearAmount}
                 salarySubExpanded={salarySubExpanded}
                 onSalarySubExpandedChange={setSalarySubExpanded}
                 welfareSubExpanded={welfareSubExpanded}
@@ -319,18 +445,16 @@ export default function HomePage() {
                 storeHeadcount={getStoreHeadcount(bu.id, selectedMonth)}
                 officeHeadcountData={headcountData?.[bu.id] || null}
                 storeHeadcountData={storeHeadcountData?.[bu.id] || null}
-                retailSales={
-                  bu.id === '경영지원'
-                    ? corporateRetailSalesMemo
-                    : getRetailSales(bu.id, selectedMonth)
-                }
-                retailSalesData={
-                  bu.id === '경영지원'
-                    ? corporateRetailSalesDataMemo
-                    : getRetailSalesData(bu.id)
-                }
+                retailSales={getRetailSales(bu.id, period.endMonth)}
+                retailSalesData={getRetailSalesData(bu.id)}
+                retailChannels={getRetailChannels(bu.id)}
+                retailMetrics={getRetailMetrics(bu.id)}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
+                costBasis={costBasis}
+                currency={effectiveCurrency}
+                exchangeRates={exchangeRates}
+                showPrevYearAmount={showPrevYearAmount}
                 salarySubExpanded={salarySubExpanded}
                 onSalarySubExpandedChange={setSalarySubExpanded}
                 welfareSubExpanded={welfareSubExpanded}
@@ -371,10 +495,16 @@ export default function HomePage() {
                 storeHeadcount={getStoreHeadcount(bu.id, selectedMonth)}
                 officeHeadcountData={headcountData?.[bu.id] || null}
                 storeHeadcountData={storeHeadcountData?.[bu.id] || null}
-                retailSales={getRetailSales(bu.id, selectedMonth)}
+                retailSales={getRetailSales(bu.id, period.endMonth)}
                 retailSalesData={getRetailSalesData(bu.id)}
+                retailChannels={getRetailChannels(bu.id)}
+                retailMetrics={getRetailMetrics(bu.id)}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
+                costBasis={costBasis}
+                currency={effectiveCurrency}
+                exchangeRates={exchangeRates}
+                showPrevYearAmount={showPrevYearAmount}
                 salarySubExpanded={salarySubExpanded}
                 onSalarySubExpandedChange={setSalarySubExpanded}
                 welfareSubExpanded={welfareSubExpanded}

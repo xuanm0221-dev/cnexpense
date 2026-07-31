@@ -7,6 +7,7 @@
 import Link from 'next/link';
 import MonthSelector from '@/components/MonthSelector';
 import { isCorporateBusinessUnitSlug } from '@/lib/corporate-cost-merge';
+import ViewControls, { type ViewControlsProps } from './ViewControls';
 
 export type DetailBrandTab = {
   /** URL 세그먼트(인코딩 전 키) */
@@ -41,7 +42,7 @@ function titleForTab(decodedParam: string): string {
   return tab ? tab.label : decodedParam;
 }
 
-interface CostDetailHeaderProps {
+interface CostDetailHeaderProps extends ViewControlsProps {
   decodedBusinessUnitParam: string;
   months: string[];
   selectedMonth: string;
@@ -53,6 +54,7 @@ export default function CostDetailHeader({
   months,
   selectedMonth,
   onMonthChange,
+  ...viewControls
 }: CostDetailHeaderProps) {
   const titleText = `${titleForTab(decodedBusinessUnitParam)} 비용분석`;
 
@@ -106,6 +108,11 @@ export default function CostDetailHeader({
               />
             </div>
           )}
+        </div>
+
+        {/* 조회 기간 · 관리식/재무식 · 통화 (홈 대시보드와 동일) */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <ViewControls {...viewControls} />
         </div>
       </div>
     </header>

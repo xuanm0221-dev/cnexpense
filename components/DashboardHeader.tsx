@@ -10,7 +10,9 @@
 
 import { useState } from 'react';
 import MonthSelector from './MonthSelector';
-import { ViewMode } from '@/lib/types';
+import { CostBasis, ViewMode } from '@/lib/types';
+import type { Currency } from '@/lib/exchange-rates';
+import ViewControls from './ViewControls';
 
 const PREPROCESS_CMD_INCREMENTAL = 'python scripts/preprocess.py';
 const PREPROCESS_CMD_FULL = 'python scripts/preprocess.py --full';
@@ -23,6 +25,21 @@ interface DashboardHeaderProps {
   onViewModeChange: (mode: ViewMode) => void;
   showOtherBU: boolean;
   onToggleOtherBU: () => void;
+  /** 비용 데이터가 없어 선택할 수 없는 기간 (분기 등) */
+  disabledViewModes?: ViewMode[];
+  costBasis: CostBasis;
+  onCostBasisChange: (basis: CostBasis) => void;
+  /** 통화 (재무식일 때만 노출) */
+  currency: Currency;
+  onCurrencyChange: (currency: Currency) => void;
+  onOpenRateTable: () => void;
+  /** 현재 적용 중인 환율 (없으면 미입력) */
+  appliedRate: number | null;
+  /** 환율 적용 기준 라벨 ('월평균' | '기간평균') */
+  appliedRateLabel: string;
+  /** 재무식 표의 전년 금액 컬럼 표시 여부 */
+  showPrevYearAmount: boolean;
+  onTogglePrevYearAmount: () => void;
 }
 
 export default function DashboardHeader({
@@ -33,6 +50,16 @@ export default function DashboardHeader({
   onViewModeChange,
   showOtherBU,
   onToggleOtherBU,
+  disabledViewModes,
+  costBasis,
+  onCostBasisChange,
+  currency,
+  onCurrencyChange,
+  onOpenRateTable,
+  appliedRate,
+  appliedRateLabel,
+  showPrevYearAmount,
+  onTogglePrevYearAmount,
 }: DashboardHeaderProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -75,33 +102,24 @@ export default function DashboardHeader({
         
         {/* 탭과 월 선택 */}
         <div className="flex items-center gap-5 border-b border-slate-200/80">
-          {/* 당월 / 누적(YTD) 탭 */}
-          <div className="pb-3">
-            <div className="inline-flex items-center rounded-xl bg-slate-100/90 p-1 ring-1 ring-slate-200/80 shadow-sm shadow-slate-200/40">
-              <button
-                onClick={() => onViewModeChange('당월')}
-                className={`px-3.5 py-1.5 text-sm font-semibold rounded-lg transition-all ${
-                  viewMode === '당월'
-                    ? 'bg-white text-blue-600 shadow-sm shadow-slate-200/60'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                당월
-              </button>
-              <button
-                onClick={() => onViewModeChange('누적(YTD)')}
-                className={`px-3.5 py-1.5 text-sm font-semibold rounded-lg transition-all ${
-                  viewMode === '누적(YTD)'
-                    ? 'bg-white text-blue-600 shadow-sm shadow-slate-200/60'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                누적(YTD)
-              </button>
-            </div>
+          <div className="pb-3 flex flex-wrap items-center gap-2">
+            <ViewControls
+              viewMode={viewMode}
+              onViewModeChange={onViewModeChange}
+              disabledViewModes={disabledViewModes}
+              costBasis={costBasis}
+              onCostBasisChange={onCostBasisChange}
+              currency={currency}
+              onCurrencyChange={onCurrencyChange}
+              onOpenRateTable={onOpenRateTable}
+              appliedRate={appliedRate}
+              appliedRateLabel={appliedRateLabel}
+              showPrevYearAmount={showPrevYearAmount}
+              onTogglePrevYearAmount={onTogglePrevYearAmount}
+            />
           </div>
-          
-          {/* 월 선택 (누적 바로 옆) */}
+
+          {/* 월 선택 */}
           <div className="pb-3">
             <MonthSelector
               months={months}
@@ -119,7 +137,7 @@ export default function DashboardHeader({
               {showOtherBU ? '기타 사업부 숨기기 ▲' : '기타 사업부 보기 ▼'}
             </button>
           </div>
-          
+
           {/* 전처리 명령 버튼 (우측 정렬) */}
           <div className="pb-3 ml-auto flex items-center gap-2">
             <span className="text-xs text-gray-400 mr-2">전처리:</span>

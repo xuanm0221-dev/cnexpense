@@ -3,7 +3,7 @@
  */
 
 import type { HeadcountData, MonthlyAmounts, StoreHeadcountData } from './types';
-import { calculateYTD } from './calculations';
+import { headcountBasis } from './calculations';
 import { CORPORATE_BUSINESS_UNIT_IDS } from './corporate-cost-merge';
 
 export function sumCorporateOfficeHeadcountSnapshot(
@@ -77,7 +77,8 @@ export function buildCorporateStoreHeadcountByMonth(
 export type CostSideDetail = '직접비' | '영업비';
 
 /**
- * 홈 BusinessUnitCard.salarySubPerPersonDenominator 와 동일 (전체 탭 없음 → 직접/영업만)
+ * 홈 BusinessUnitCard 와 동일한 '인당' 분모 (전체 탭 없음 → 직접/영업만).
+ * 당월=선택월 인원, YTD=1월~선택월 **평균** 인원 (인원은 스톡이라 누적 합 금지)
  */
 export function salarySubPerPersonDenominator(
   costType: CostSideDetail,
@@ -88,14 +89,11 @@ export function salarySubPerPersonDenominator(
   officeSeries: MonthlyAmounts | null,
   storeSeries: MonthlyAmounts | null
 ): number {
+  const series = costType === '직접비' ? storeSeries : officeSeries;
   if (isYTD) {
-    if (costType === '직접비') {
-      return storeSeries ? calculateYTD(storeSeries, selectedMonth) : 0;
-    }
-    return officeSeries ? calculateYTD(officeSeries, selectedMonth) : 0;
+    return headcountBasis(series, selectedMonth, true) ?? 0;
   }
-  if (costType === '직접비') {
-    return storeSnapshot ?? 0;
-  }
-  return officeSnapshot ?? 0;
+  const snapshot = costType === '직접비' ? storeSnapshot : officeSnapshot;
+  // 스냅샷이 없으면 시계열에서 해당 월 값을 찾는다 (전년 동월 계산 경로)
+  return snapshot ?? headcountBasis(series, selectedMonth, false) ?? 0;
 }
