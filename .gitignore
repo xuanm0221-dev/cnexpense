@@ -37,3 +37,10 @@ next-env.d.ts
 
 # 비용 CSV 파일 제외
 비용파일/
+
+# Python 캐시
+__pycache__/
+*.pyc
+
+# Snowflake SDK 로그 (실행할 때마다 커짐)
+snowflake.log
