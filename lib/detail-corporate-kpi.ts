@@ -191,13 +191,3 @@ export function buildDetailKpiMetrics(
   };
 }
 
-export function buildCorporateKpiMetrics(
-  buCosts: BusinessUnitCosts,
-  retailMonth: RetailSalesData | null,
-  retailYtd: RetailSalesData | null,
-  selectedMonth: string
-): CorporateKpiMetrics {
-  return buildDetailKpiMetrics(buCosts, retailMonth, retailYtd, selectedMonth, {
-    aggregation: 'corporate',
-  });
-}

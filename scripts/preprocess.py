@@ -27,6 +27,7 @@ ADJUSTMENT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/조정분�
 MASTERS_DIR = BASE_DIR / "data" / "masters"
 OUTPUT_DIR = BASE_DIR / "data" / "processed"
 OUTPUT_FILE = OUTPUT_DIR / "aggregated-costs.json"
+ANALYSIS_OUTPUT_FILE = OUTPUT_DIR / "account-analysis.json"
 HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "headcount.json"
 STORE_HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "store-headcount.json"
 
@@ -44,6 +45,301 @@ FINANCIAL_EXCLUDED = "__제외__"
 ADJUSTMENT_BUSINESS_UNIT = "MLB"
 # 조정분개 시트명
 ADJUSTMENT_SHEET = "调整分录"
+# 재무식 하위 분해에서 조정분개를 표시할 라벨
+ADJUSTMENT_PKG_LABEL = "조정"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 계정별 분석 — 적요(텍스트) 기반 구성 버킷
+#
+# 계정 2레벨(중분류/GL)만으로는 "무엇 때문에 늘었나"가 안 보여서, 기표 적요를
+# 키워드로 묶어 구성을 만든다. 같은 대상을 여러 표기로 적으므로(抖音=Douyin=틱톡)
+# 표기 변형을 한 버킷으로 모은다. 위에서부터 먼저 맞는 규칙을 쓴다.
+# 매칭 대상: 적요 + G/L 계정 설명 + 코스트센터명
+# ────────────────────────────────────────────────────────────────────────────
+ANALYSIS_BUCKET_RULES = {
+    '급여': [
+        ('매장 인건비', r'인건비_직영점|직영점|门店|店铺'),
+        ('상여/성과급', r'奖金|年终|성과급|BONUS|bonus'),
+        ('퇴직·이직보상', r'离职|补偿金|退职|퇴직급여'),
+        ('외주/파견', r'外包|劳务|派遣|临时工|实习'),
+        ('사무실 급여', r'工资|인건비|급여|薪酬'),
+    ],
+    '복리비': [
+        ('사회보험·공적금', r'社保|公积金|社会保险|사회보험|공적금|保险'),
+        ('연회·단합·여행', r'年会|outing|OUTING|团建|周年|旅游|워크숍|단합'),
+        ('주재원·외국인', r'外国人|주재원|外籍|外派'),
+        ('기타 복지', r'福利|生日|体检|기타복지|野外|야외'),
+    ],
+    '광고비': [
+        ('틱톡(抖音)', r'抖音|Douyin|DOUYIN|틱톡|TikTok|TIKTOK|tiktok|마이크로폰'),
+        ('티몰·타오바오', r'天猫|TMALL|Tmall|tmall|淘宝|万相台|品销宝|超级推荐|차오지투이지앤|핀샤오바오|showmax|SHOWMAX|直通车'),
+        ('샤오홍슈(小红书)', r'小红书|샤오홍슈|xiaohongshu'),
+        ('JD·기타 플랫폼', r'京东|唯品会|得物|拼多多|快手|\bJD\b'),
+        ('APP·자사몰', r'마케팅홍보비_APP|小程序|会员|CRM|\bAPP\b|\bapp\b'),
+        ('캠페인·모델', r'CAMPAIGN|campaign|Campaign|캠페인|代言|艺人|明星|拍摄|모델|브랜딩|브랜드'),
+        ('오프라인·이벤트', r'EVENT|event|活动|展|팝업|POP|리테일링|门店|快闪'),
+    ],
+    '수주회': [
+        ('행사 운영(장소·식음)', r'酒店|餐饮|场地|会场|호텔|短租'),
+        ('진열·연출물', r'陈列|道具|物料|装饰|模特|氛围'),
+        ('유니폼', r'工服|유니폼|服装'),
+        ('국제운송', r'DHL|FEDEX|快递|국제|关税'),
+        ('시스템·기타', r'系统|系統|订货系统|开发'),
+        ('행사 일괄(계상)', r'TRADESHOW|tradeshow|Tradeshow|订货会|\bTS\b'),
+    ],
+    '출장비': [
+        ('해외출장', r'海外|국외|해외|国际|국제'),
+        ('국내출장', r'国内|국내|携程|机票|酒店|差旅|滴滴'),
+    ],
+    '물류비': [
+        ('분류용역', r'分拣|拣货|분류|\bVAS\b'),
+        ('운송·택배', r'运输|运费|快递|배송|顺丰|荣庆|운송'),
+        ('창고비', r'仓储|仓库|창고|\b仓\b|仓库사용료'),
+    ],
+    '임차료': [
+        ('IFRS 조정', r'임차료\(조정\)|Rent ADJ'),
+        ('판매수수료(백화점 등)', r'판매수수료|联营|扣点|抽成'),
+        ('관리비', r'管理费|관리비|物业'),
+        ('수도광열', r'수도광열|水电|电费'),
+        ('매장·사무실 임차료', r'租金|임차료|租赁|房租'),
+    ],
+    '플랫폼수수료': [
+        ('IFRS 조정', r'Platform ADJ|\(조정\)'),
+        ('알리페이·티몰', r'支付宝|Alipay|天猫|退货宝|花呗'),
+        ('틱톡(抖音)', r'抖音|틱톡|Douyin'),
+        ('웨이핀후이', r'唯品会'),
+        ('JD', r'京东|\bJD\b'),
+    ],
+    'TP수수료': [
+        ('틱톡 TP', r'抖音|Douyin|DOUYIN|틱톡'),
+        ('티몰 TP', r'天猫|TMALL|Tmall|TP运营费|TP佣金|销售佣金|매출연동'),
+    ],
+    '지급수수료': [
+        ('IT·시스템', r'SAP|license|LICENSE|开发|接口|系统|软件|\bAI\b|OMS|유지보수|阿里云|云资源'),
+        ('데이터·운영 서비스', r'数据|DBEI|辰月|데이터'),
+        ('물류 부대비용', r'搬仓|盘点|销毁|QAQC|宝尊|顺丰|\b仓\b'),
+        ('보험', r'商业保险|保险'),
+        ('감사·자문', r'审计|감사|咨询|顾问|자문|税务'),
+        ('매장 서비스', r'直营|联营|开店|门店|店铺|매장'),
+    ],
+    '진열/포장': [
+        ('포장재', r'包材|耗材|包装|购物袋|포장'),
+        ('매장 연출물', r'道具|模特|海报|陈列|POP|物料'),
+    ],
+    '감가상각비': [
+        ('매장 인테리어', r'인테리어|装修|门店|店'),
+        ('소프트웨어·홈페이지', r'소프트웨어|软件|홈페이지'),
+        ('기계·비품', r'기계장치|공기구|비품|设备'),
+    ],
+    '세금과공과': [
+        ('부가세 부가분(附加税)', r'附加税'),
+        ('인화세(印花税)', r'印花税|인화세'),
+    ],
+    '대리상지원금': [
+        ('인테리어·집기 지원', r'装修|外立面|楼梯|图纸|인테리어'),
+        ('판촉 지원', r'CAMPAGIN|CAMPAIGN|DP费用|双节|판촉'),
+    ],
+    '상표사용료': [
+        ('브랜드 상표권', r'商标|상표'),
+    ],
+    '기타': [
+        ('교통·차량', r'滴滴|打车|交通|汽车|租赁|洗车|停车'),
+        ('사무용품·소모품', r'办公|科力普|소모품|用品'),
+        ('통신비', r'电信|通信|통신|话费'),
+        ('접대비', r'茅台|접대|招待|礼品|E卡'),
+    ],
+}
+
+_ANALYSIS_RULES_COMPILED = None
+
+
+def _analysis_rules():
+    global _ANALYSIS_RULES_COMPILED
+    if _ANALYSIS_RULES_COMPILED is None:
+        import re
+        _ANALYSIS_RULES_COMPILED = {
+            cat: [(name, re.compile(pat)) for name, pat in rules]
+            for cat, rules in ANALYSIS_BUCKET_RULES.items()
+        }
+    return _ANALYSIS_RULES_COMPILED
+
+
+ANALYSIS_ETC = '기타'
+
+
+def _assign_analysis_bucket(category, haystack):
+    for name, rx in _analysis_rules().get(category, []):
+        if rx.search(haystack):
+            return name
+    return ANALYSIS_ETC
+
+
+def _analysis_haystack(df):
+    """적요 + G/L 계정 설명 + 코스트센터명 (마스터 조인으로 컬럼명이 _x/_y 가 될 수 있음)"""
+    def col(*names):
+        for n in names:
+            if n in df.columns:
+                return df[n].fillna('').astype(str)
+        return pd.Series([''] * len(df), index=df.index)
+
+    return (
+        col('텍스트') + ' ' + col('G/L 계정 설명') + ' ' + col('코스트센터명_x', '코스트센터명')
+    )
+
+
+def aggregate_account_analysis(mgmt_df, financial_df_rows):
+    """계정별 분석용 집계.
+
+    관리식: 연월·사업부·비용구분·대분류·구성(적요 버킷)
+    재무식: 연월·사업부·연결계정과목·구성(=관리식 대분류) — 연결계정과목 안에서
+            어떤 관리 대분류가 움직였는지가 가장 읽기 쉬운 분해라 대분류를 그대로 쓴다.
+    """
+    print("\n[8/8] 계정별 분석(적요 기반) 집계 중...")
+
+    if mgmt_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    df = mgmt_df.copy()
+    # aggregate_data() 와 동일한 직접/영업 구분 (계정 마스터 우선, 없으면 코스트센터)
+    cc_col = '영업/직접' if '영업/직접' in df.columns else '영업비/직접비'
+    cc_norm = df[cc_col].replace({'영업': '영업비', '직접': '직접비'})
+    if '직접/영업' in df.columns:
+        acc_stripped = df['직접/영업'].fillna('').astype(str).str.strip()
+        is_ob = acc_stripped.isin(['영업', '영업비'])
+        is_db = acc_stripped.isin(['직접', '직접비'])
+        df['_집계비용구분'] = np.where(is_ob, '영업비', np.where(is_db, '직접비', cc_norm))
+    else:
+        df['_집계비용구분'] = cc_norm
+
+    df['_hay'] = _analysis_haystack(df)
+    df['_bucket'] = [
+        _assign_analysis_bucket(c, h) for c, h in zip(df['대분류'], df['_hay'])
+    ]
+    mgmt = df.groupby(
+        ['연월', '사업부', '_집계비용구분', '대분류', '_bucket'], as_index=False
+    )['금액(전표 통화)'].sum()
+    mgmt.columns = ['연월', '사업부', '비용구분', '대분류', '구성', '금액']
+
+    etc_share = (
+        mgmt.loc[mgmt['구성'] == ANALYSIS_ETC, '금액'].sum() / mgmt['금액'].sum()
+        if mgmt['금액'].sum()
+        else 0
+    )
+    print(f"  - 관리식 구성 집계: {len(mgmt)}행, 기타 비중 {etc_share:.1%}")
+
+    fin = financial_df_rows
+    if fin is None or fin.empty:
+        return mgmt, pd.DataFrame()
+
+    print(f"  - 재무식 구성 집계: {len(fin)}행")
+    return mgmt, fin
+
+
+def aggregate_financial_analysis(df):
+    """재무식: 연결계정과목 × 관리식 대분류(구성) 월별 집계"""
+    if df.empty or '연결계정과목' not in df.columns:
+        return pd.DataFrame(columns=['연월', '사업부', '연결계정과목', '구성', '금액'])
+
+    work = df[df['연결계정과목'] != FINANCIAL_EXCLUDED].copy()
+    if work.empty:
+        return pd.DataFrame(columns=['연월', '사업부', '연결계정과목', '구성', '금액'])
+
+    work['구성'] = work['대분류'].fillna('기타').astype(str)
+    grouped = work.groupby(
+        ['연월', '사업부', '연결계정과목', '구성'], as_index=False
+    )['금액(전표 통화)'].sum()
+    grouped.columns = ['연월', '사업부', '연결계정과목', '구성', '금액']
+    return grouped
+
+
+def apply_adjustments_analysis(fin_analysis_df, adjustments, allowed_months=None):
+    """재무식 분석에도 IFRS 조정분개를 반영 (구성 = 'IFRS 리스 조정').
+
+    카드·표의 재무식 금액은 조정분개를 포함하므로, 분석에서 빼면 금액이 어긋난다.
+    """
+    if not adjustments:
+        return fin_analysis_df
+
+    rows = []
+    for ym, by_link in adjustments.items():
+        if allowed_months is not None and ym not in allowed_months:
+            continue
+        for link, amount in by_link.items():
+            rows.append({
+                '연월': ym,
+                '사업부': ADJUSTMENT_BUSINESS_UNIT,
+                '연결계정과목': link,
+                '구성': 'IFRS 리스 조정',
+                '금액': amount,
+            })
+    if not rows:
+        return fin_analysis_df
+
+    merged = pd.concat([fin_analysis_df, pd.DataFrame(rows)], ignore_index=True)
+    merged = merged.groupby(
+        ['연월', '사업부', '연결계정과목', '구성'], as_index=False
+    )['금액'].sum()
+    print(f"  - 재무식 분석 조정분개 반영: {len(rows)}건")
+    return merged
+
+
+def build_analysis_json(mgmt_rows, fin_rows, months):
+    """계정별 분석 JSON — { 관리식: {사업부: {비용구분: {대분류: {구성: {월: 금액}}}}}, 재무식: {...} }"""
+    result = {
+        'metadata': {
+            'generatedAt': datetime.now().isoformat(),
+            'months': months,
+        },
+        '관리식': {},
+        '재무식': {},
+    }
+
+    for _, r in mgmt_rows.iterrows():
+        node = (
+            result['관리식']
+            .setdefault(r['사업부'], {})
+            .setdefault(r['비용구분'], {})
+            .setdefault(r['대분류'], {})
+            .setdefault(r['구성'], {})
+        )
+        node[r['연월']] = round(float(r['금액']), 2)
+
+    if fin_rows is not None and not fin_rows.empty:
+        for _, r in fin_rows.iterrows():
+            node = (
+                result['재무식']
+                .setdefault(r['사업부'], {})
+                .setdefault(r['연결계정과목'], {})
+                .setdefault(r['구성'], {})
+            )
+            node[r['연월']] = round(float(r['금액']), 2)
+
+    return result
+
+
+def merge_analysis_json(existing, new_data):
+    """월 단위 병합 (증분 모드)"""
+    if not existing:
+        return new_data
+
+    def deep_merge(dst, src, depth):
+        for k, v in src.items():
+            if depth == 0:
+                dst[k] = v  # 월별 금액 — 덮어쓰기
+            else:
+                deep_merge(dst.setdefault(k, {}), v, depth - 1)
+
+    for basis, depth in (('관리식', 3), ('재무식', 2)):
+        deep_merge(existing.setdefault(basis, {}), new_data.get(basis, {}), depth)
+
+    months = sorted(
+        set(existing.get('metadata', {}).get('months', []))
+        | set(new_data.get('metadata', {}).get('months', []))
+    )
+    existing.setdefault('metadata', {})['months'] = months
+    existing['metadata']['generatedAt'] = datetime.now().isoformat()
+    return existing
 
 
 def load_master_files():
@@ -98,6 +394,12 @@ def load_account_mapping():
         df['pkg code'] = df['pkg code'].fillna('').astype(str).str.strip()
     else:
         df['pkg code'] = ''
+    # pkg 표시명 — 한글(pkg name(KO)) 우선, 없으면 영문, 그것도 없으면 코드
+    for col in ('pkg name(KO)', 'pkg name(EN)', 'pkg name'):
+        if col in df.columns:
+            df[col] = df[col].fillna('').astype(str).str.strip()
+        else:
+            df[col] = ''
 
     # 관리 / 재무 사용 여부 (컬럼이 없으면 전부 사용으로 간주 — 구 파일 호환)
     for col in ('관리', '재무'):
@@ -123,16 +425,26 @@ def load_account_mapping():
         (df['재무'] != USE_FLAG) | (df['연결계정과목'] == ''), '연결계정과목'
     ] = FINANCIAL_EXCLUDED
 
-    # 장부(G/L) 조인용: sap code → 연결계정과목 + 관리식 포함 여부
+    # pkg 계정과목 표시 라벨 (재무식 하위 분해용)
+    df['_pkg라벨'] = df.apply(
+        lambda r: (
+            r['pkg name(KO)'] or r['pkg name(EN)'] or r['pkg name'] or r['pkg code']
+        )
+        if r['pkg code']
+        else '',
+        axis=1,
+    )
+
+    # 장부(G/L) 조인용: sap code → 연결계정과목 + pkg 라벨 + 관리식 포함 여부
     by_sap = (
         df[df['sap code'] != '']
-        .loc[:, ['sap code', '연결계정과목', '관리']]
+        .loc[:, ['sap code', '연결계정과목', '_pkg라벨', '관리']]
         .drop_duplicates(subset=['sap code'])
         .rename(columns={'관리': '_관리플래그'})
     )
     # 조정분개 조인용: pkg code → 연결계정과목 (sap code 없는 행 포함)
     by_pkg = {
-        r['pkg code']: r['연결계정과목']
+        r['pkg code']: (r['연결계정과목'], r['_pkg라벨'])
         for _, r in df.iterrows()
         if r['pkg code'] and r['연결계정과목'] != FINANCIAL_EXCLUDED
     }
@@ -348,6 +660,8 @@ def join_with_masters(df, cost_center_master, account_master, account_mapping=No
 
         df['_관리포함'] = df['_관리플래그'].fillna(USE_FLAG).astype(str).str.strip() == USE_FLAG
         df = df.drop(columns=['_관리플래그'], errors='ignore')
+        df['_pkg라벨'] = df['_pkg라벨'].fillna('(미지정)').astype(str).str.strip()
+        df.loc[df['_pkg라벨'] == '', '_pkg라벨'] = '(미지정)'
 
         no_link = df[df['연결계정과목'].isna()]
         if len(no_link) > 0:
@@ -367,10 +681,30 @@ def filter_target_business_units(df):
     
     initial_count = len(df)
     
-    # 사업부 값이 있고, 대분류 값이 있는 데이터만
+    # 사업부 값이 있는 데이터만
     df = df[df['사업부'].notna()]
-    df = df[df['대분류'].notna()]
     df = df[df['사업부'].isin(TARGET_BUSINESS_UNITS)]
+
+    # 관리식(대분류) 또는 재무식(연결계정과목) 중 하나라도 분류되는 행만 유지.
+    # 계정과목마스터에 없어도 맵핑에 있으면 재무식에는 들어가야 한다.
+    keep_mgmt = df['대분류'].notna()
+    if '연결계정과목' in df.columns:
+        keep_fin = df['연결계정과목'].notna() & (df['연결계정과목'] != FINANCIAL_EXCLUDED)
+    else:
+        keep_fin = keep_mgmt
+    dropped_both = (~keep_mgmt) & (~keep_fin)
+    if dropped_both.any():
+        gls = df.loc[dropped_both, 'G/L 계정'].astype(str).str.strip().unique()
+        print(f"  - 양쪽 모두 미분류로 제외: {dropped_both.sum()}건 (G/L {', '.join(gls)})")
+    fin_only = (~keep_mgmt) & keep_fin
+    if fin_only.any():
+        gls = df.loc[fin_only, 'G/L 계정'].astype(str).str.strip().unique()
+        print(
+            f"  - 계정과목마스터 미등재(대분류 없음) → 재무식만 반영: "
+            f"{fin_only.sum()}건 / {df.loc[fin_only, '금액(전표 통화)'].sum():,.0f} 위안 "
+            f"(G/L {', '.join(gls)})"
+        )
+    df = df[keep_mgmt | keep_fin]
     
     # 영업/직접: '영업','직접'만 포함, 'X'(배분계정,조정계정) 무조건 제외
     if '영업/직접' in df.columns:
@@ -659,10 +993,11 @@ def load_adjustment_entries(pkg_map):
                 code_str = str(int(code))
             else:
                 code_str = str(code or '').strip()
-            link = pkg_map.get(code_str)
-            if not link:
+            hit = pkg_map.get(code_str)
+            if not hit:
                 skipped += 1
                 continue
+            link = hit[0]
             totals[link] = totals.get(link, 0) + (debit - credit)
             used += 1
 
@@ -772,6 +1107,51 @@ def aggregate_financial_data(df):
     return grouped
 
 
+def aggregate_financial_pkg(df):
+    """
+    재무식 하위 분해 — 연결계정과목 × **pkg 계정과목** 별 월별 집계.
+    화면에서 연결계정과목을 펼치면 이 pkg 계정들이 하위 행으로 보인다.
+    반환: 연월, 사업부, 연결계정과목, pkg, 금액
+    """
+    empty_cols = ['연월', '사업부', '연결계정과목', 'pkg', '금액']
+    if df.empty or '연결계정과목' not in df.columns or '_pkg라벨' not in df.columns:
+        return pd.DataFrame(columns=empty_cols)
+
+    d = df[df['연결계정과목'] != FINANCIAL_EXCLUDED]
+    grouped = d.groupby(
+        ['연월', '사업부', '연결계정과목', '_pkg라벨'], observed=False
+    ).agg({'금액(전표 통화)': 'sum'}).reset_index()
+    grouped.columns = empty_cols
+
+    print(f"  - 재무식 pkg 집계 완료: {len(grouped)}개 그룹")
+    return grouped
+
+
+def apply_adjustments_pkg(financial_pkg_df, adjustments, allowed_months=None):
+    """조정분개를 pkg 분해에 '조정' 행으로 추가"""
+    if not adjustments:
+        return financial_pkg_df
+
+    rows = []
+    for ym, by_link in adjustments.items():
+        if allowed_months is not None and ym not in allowed_months:
+            continue
+        for link, amount in by_link.items():
+            rows.append({
+                '연월': ym,
+                '사업부': ADJUSTMENT_BUSINESS_UNIT,
+                '연결계정과목': link,
+                'pkg': ADJUSTMENT_PKG_LABEL,
+                '금액': amount,
+            })
+    if not rows:
+        return financial_pkg_df
+    merged = pd.concat([financial_pkg_df, pd.DataFrame(rows)], ignore_index=True)
+    return merged.groupby(
+        ['연월', '사업부', '연결계정과목', 'pkg'], as_index=False
+    )['금액'].sum()
+
+
 def aggregate_financial_gl(df):
     """
     재무식 드릴다운 — 연결계정과목 × G/L 계정 설명별 월별 집계 (직접/영업 구분 없음).
@@ -845,6 +1225,7 @@ def convert_to_hierarchical_json(
     gl_aggregated_df=None,
     financial_df=None,
     financial_gl_df=None,
+    financial_pkg_df=None,
 ):
     """계층적 JSON 변환. salary_breakdown / welfare_breakdown: 중분류 집계 결과."""
     print("\n[7/8] JSON 변환 중...")
@@ -932,6 +1313,20 @@ def convert_to_hierarchical_json(
                 fin_gl_bucket[category][gl_label][row['연월']] = int(round(row['금액']))
             result["data"][bu]["재무식GL설명"] = fin_gl_bucket
 
+        # 재무식 하위 분해 (연결계정과목 → pkg 계정과목 / 조정)
+        if financial_pkg_df is not None and not financial_pkg_df.empty:
+            fin_pkg_bucket = {}
+            bu_pkg = financial_pkg_df[financial_pkg_df['사업부'] == bu]
+            for _, row in bu_pkg.iterrows():
+                category = row['연결계정과목']
+                pkg = row['pkg']
+                if category not in fin_pkg_bucket:
+                    fin_pkg_bucket[category] = {}
+                if pkg not in fin_pkg_bucket[category]:
+                    fin_pkg_bucket[category][pkg] = {}
+                fin_pkg_bucket[category][pkg][row['연월']] = int(round(row['금액']))
+            result["data"][bu]["재무식PKG"] = fin_pkg_bucket
+
     print(f"  - JSON 변환 완료")
 
     return result
@@ -1009,6 +1404,20 @@ def merge_json(existing, new_data):
                     ef[category] = {}
                 for month, amount in monthly_amounts.items():
                     ef[category][month] = amount
+        new_fin_pkg = new_data.get("data", {}).get(bu, {}).get("재무식PKG")
+        if new_fin_pkg:
+            if "재무식PKG" not in existing["data"][bu]:
+                existing["data"][bu]["재무식PKG"] = {}
+            efp = existing["data"][bu]["재무식PKG"]
+            for category, pkg_map in new_fin_pkg.items():
+                if category not in efp:
+                    efp[category] = {}
+                for pkg, monthly_amounts in pkg_map.items():
+                    if pkg not in efp[category]:
+                        efp[category][pkg] = {}
+                    for month, amount in monthly_amounts.items():
+                        efp[category][pkg][month] = amount
+
         new_fin_gl = new_data.get("data", {}).get(bu, {}).get("재무식GL설명")
         if new_fin_gl:
             if "재무식GL설명" not in existing["data"][bu]:
@@ -1425,13 +1834,14 @@ def main():
             # 6. 집계
             # 관리식은 맵핑의 `관리`='사용' 계정만 (예: 대리상지원금 제외)
             if '_관리포함' in cost_df.columns:
-                mgmt_df = cost_df[cost_df['_관리포함']]
+                # 관리식: 맵핑 `관리`='사용' + 대분류가 있는 행만
+                mgmt_df = cost_df[cost_df['_관리포함'] & cost_df['대분류'].notna()]
                 dropped = len(cost_df) - len(mgmt_df)
                 if dropped:
                     amt = cost_df.loc[~cost_df['_관리포함'], '금액(전표 통화)'].sum()
                     print(f"  - 관리식 제외: {dropped:,}건 / {amt:,.0f} 위안")
             else:
-                mgmt_df = cost_df
+                mgmt_df = cost_df[cost_df['대분류'].notna()]
 
             aggregated_df = aggregate_data(mgmt_df)
             gl_aggregated_df = aggregate_gl_by_category(mgmt_df)
@@ -1439,6 +1849,7 @@ def main():
             welfare_breakdown = aggregate_welfare_subcategories(mgmt_df)
             financial_df = aggregate_financial_data(cost_df)
             financial_gl_df = aggregate_financial_gl(cost_df)
+            financial_pkg_df = aggregate_financial_pkg(cost_df)
 
             # IFRS 조정분개 (재무식 전용) — 분기 누적 파일을 증분으로 변환해 반영
             adjustments = load_adjustment_entries(
@@ -1452,6 +1863,7 @@ def main():
                     print(f"  [증분] 조정분개 미반영 월: {skipped} — 변경 시 --full 실행 필요")
             financial_df = apply_adjustments(financial_df, adjustments, allowed)
             financial_gl_df = apply_adjustments_gl(financial_gl_df, adjustments, allowed)
+            financial_pkg_df = apply_adjustments_pkg(financial_pkg_df, adjustments, allowed)
 
             # 7. JSON 변환
             new_json = convert_to_hierarchical_json(
@@ -1462,8 +1874,23 @@ def main():
                 gl_aggregated_df,
                 financial_df,
                 financial_gl_df,
+                financial_pkg_df,
             )
             
+            # 7-2. 계정별 분석 (적요 기반 구성)
+            analysis_mgmt, _ = aggregate_account_analysis(mgmt_df, None)
+            analysis_fin = apply_adjustments_analysis(
+                aggregate_financial_analysis(cost_df), adjustments, allowed
+            )
+            analysis_json = build_analysis_json(analysis_mgmt, analysis_fin, months)
+            if not is_full and ANALYSIS_OUTPUT_FILE.exists():
+                try:
+                    with open(ANALYSIS_OUTPUT_FILE, 'r', encoding='utf-8') as f:
+                        analysis_json = merge_analysis_json(json.load(f), analysis_json)
+                except Exception as e:
+                    print(f"  [주의] 기존 분석 JSON 병합 실패({e}) — 새로 씁니다")
+            save_json(analysis_json, ANALYSIS_OUTPUT_FILE)
+
             # 8. 병합 후 저장 (증분 모드면 기존 + 새 데이터)
             if not is_full and existing_json:
                 merged_months = sorted(set((existing_json.get("metadata", {}).get("months", []) or []) + months))

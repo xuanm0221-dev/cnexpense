@@ -74,10 +74,25 @@ export function buildCorporateStoreHeadcountByMonth(
   return Object.keys(result).length > 0 ? result : null;
 }
 
-export type CostSideDetail = '직접비' | '영업비';
+export type CostSideDetail = '직접비' | '영업비' | '전체';
+
+/** 두 인원 시계열 합 (전체 탭 = 매장 + 사무실) */
+function sumSeries(
+  a: MonthlyAmounts | null,
+  b: MonthlyAmounts | null
+): MonthlyAmounts | null {
+  if (!a) return b;
+  if (!b) return a;
+  const out: MonthlyAmounts = { ...a };
+  for (const month of Object.keys(b)) {
+    out[month] = (out[month] || 0) + b[month];
+  }
+  return out;
+}
 
 /**
- * 홈 BusinessUnitCard 와 동일한 '인당' 분모 (전체 탭 없음 → 직접/영업만).
+ * 홈 BusinessUnitCard 와 동일한 '인당' 분모.
+ * 직접비=매장, 영업비=사무실, 전체=둘의 합.
  * 당월=선택월 인원, YTD=1월~선택월 **평균** 인원 (인원은 스톡이라 누적 합 금지)
  */
 export function salarySubPerPersonDenominator(
@@ -89,11 +104,23 @@ export function salarySubPerPersonDenominator(
   officeSeries: MonthlyAmounts | null,
   storeSeries: MonthlyAmounts | null
 ): number {
-  const series = costType === '직접비' ? storeSeries : officeSeries;
+  const series =
+    costType === '직접비'
+      ? storeSeries
+      : costType === '영업비'
+        ? officeSeries
+        : sumSeries(officeSeries, storeSeries);
   if (isYTD) {
     return headcountBasis(series, selectedMonth, true) ?? 0;
   }
-  const snapshot = costType === '직접비' ? storeSnapshot : officeSnapshot;
+  const snapshot =
+    costType === '직접비'
+      ? storeSnapshot
+      : costType === '영업비'
+        ? officeSnapshot
+        : storeSnapshot === null && officeSnapshot === null
+          ? null
+          : (officeSnapshot ?? 0) + (storeSnapshot ?? 0);
   // 스냅샷이 없으면 시계열에서 해당 월 값을 찾는다 (전년 동월 계산 경로)
   return snapshot ?? headcountBasis(series, selectedMonth, false) ?? 0;
 }

@@ -14,6 +14,7 @@ import {
   salarySubPerPersonDenominator,
   type CostSideDetail,
 } from './corporate-headcount';
+import { mergeCategoryData } from './category-selection';
 
 export const SALARY_KPI_ROW_LABELS = [
   '기본급',
@@ -137,7 +138,12 @@ export function buildSalarySubKpiCardModel(
     };
   }
 
-  const buckets = costType === '직접비' ? sub.직접비 : sub.영업비;
+  const buckets =
+    costType === '직접비'
+      ? sub.직접비
+      : costType === '영업비'
+        ? sub.영업비
+        : mergeCategoryData(sub.직접비, sub.영업비);
   const prevMonth = getPreviousYearMonth(selectedMonth);
 
   const denomMonth = salarySubPerPersonDenominator(
@@ -184,7 +190,10 @@ export function buildSalarySubKpiCardModel(
     storeSeries
   );
 
-  const salaryMajor = costs[costType]?.['급여'];
+  const salaryMajor =
+    costType === '전체'
+      ? mergeCategoryData(costs.직접비, costs.영업비)['급여']
+      : costs[costType]?.['급여'];
   let heroYtd = salaryMajor ? calculateYTD(salaryMajor, selectedMonth) : 0;
   let heroYtdPrev = salaryMajor ? calculateYTD(salaryMajor, prevMonth) : 0;
 

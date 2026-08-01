@@ -50,6 +50,8 @@ export interface BusinessUnitCosts {
   재무식?: CategoryData;
   /** 재무식 드릴다운: 연결계정과목 → G/L 계정 설명 → 월별 금액 */
   재무식GL설명?: GlBreakdownByCategory;
+  /** 재무식 하위 분해: 연결계정과목 → pkg 계정과목(+'조정') → 월별 금액 */
+  재무식PKG?: GlBreakdownByCategory;
 }
 
 // 전체 비용 데이터

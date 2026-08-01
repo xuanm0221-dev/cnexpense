@@ -5,7 +5,6 @@
  */
 
 import { useState, useMemo } from 'react';
-import Link from 'next/link';
 import {
   BusinessUnitCosts,
   CostBasis,
@@ -54,9 +53,11 @@ interface BusinessUnitCardProps {
   activeTab?: CostType; // 직접비/영업비/전체 탭 (상위에서 제어 시 모든 카드 동기화)
   onTabChange?: (tab: CostType) => void;
   costBasis?: CostBasis; // 관리식(대분류×직접/영업) / 재무식(연결계정과목)
+  /** 제목을 드롭다운으로 — 사업부 전환용. 없으면 일반 제목 */
+  unitOptions?: { id: string; name: string }[];
+  onUnitChange?: (unitId: string) => void;
   currency?: Currency; // 표시 통화 (재무식에서만 KRW 가능)
   exchangeRates?: ExchangeRateData | null; // 환율표 (분기는 누적 차감으로 환산)
-  showPrevYearAmount?: boolean; // 재무식 표에 전년 금액 컬럼 표시
   salarySubExpanded?: boolean;
   onSalarySubExpandedChange?: (open: boolean) => void;
   welfareSubExpanded?: boolean;
@@ -93,9 +94,10 @@ export default function BusinessUnitCard({
   activeTab: externalActiveTab,
   onTabChange,
   costBasis = '관리식',
+  unitOptions,
+  onUnitChange,
   currency = 'CNY',
   exchangeRates = null,
-  showPrevYearAmount = false,
   salarySubExpanded,
   onSalarySubExpandedChange,
   welfareSubExpanded,
@@ -182,6 +184,13 @@ export default function BusinessUnitCard({
     () => basisForTab(officeBasis, storeBasis, activeTab),
     [activeTab, officeBasis, storeBasis]
   );
+
+  /** 재무식·전체 탭은 사무실+매장 합이라 두 줄로 나눠 표시 */
+  const splitHeadcount = isFinancial || activeTab === '전체';
+  const headcountText = (v: number | null) =>
+    v === null ? '-' : `${Math.round(v).toLocaleString()}명`;
+  const headcountDelta = (curr: number | null, prev: number | null) =>
+    curr === null || prev === null || prev === 0 ? null : Math.round(curr - prev);
 
   /** '인당' 분모 */
   const salarySubPerPersonDenominator = useMemo(
@@ -378,6 +387,13 @@ export default function BusinessUnitCard({
       button: 'bg-violet-600 hover:bg-violet-700 shadow-[0_10px_24px_rgba(124,58,237,0.24)]',
       yoyBox: 'bg-white/18 border border-white/15 backdrop-blur-[2px]',
     },
+    navy: {
+      gradient: 'from-[#16305c] via-[#1d3f73] to-[#274d86]',
+      light: 'bg-slate-50/80',
+      text: 'text-[#16305c]',
+      button: 'bg-[#1d3f73] hover:bg-[#16305c] shadow-[0_10px_24px_rgba(22,48,92,0.26)]',
+      yoyBox: 'bg-white/14 border border-white/12 backdrop-blur-[2px]',
+    },
   };
   
   const colors = colorClasses[color as keyof typeof colorClasses] || colorClasses.gray;
@@ -386,30 +402,48 @@ export default function BusinessUnitCard({
     <div className="bg-white rounded-2xl shadow-[0_16px_40px_rgba(15,23,42,0.10)] border border-slate-200/80 ring-1 ring-white/70 overflow-visible">
       {/* 헤더 (그라데이션) — 상단 모서리만 클립 */}
       <div className={`rounded-t-2xl overflow-hidden bg-gradient-to-r ${colors.gradient} p-4 sm:p-6 text-white shadow-inner`}>
-        <h2 className="text-lg sm:text-xl font-bold tracking-[-0.02em] mb-3 sm:mb-4">{name}</h2>
+        {unitOptions && onUnitChange ? (
+          <div className="relative mb-3 sm:mb-4 inline-flex items-center">
+            <select
+              value={id}
+              onChange={e => onUnitChange(e.target.value)}
+              aria-label="사업부 선택"
+              className="appearance-none bg-white/15 hover:bg-white/25 focus:bg-white/25 border border-white/25 rounded-lg pl-3 pr-8 py-1.5 text-lg sm:text-xl font-bold tracking-[-0.02em] text-white outline-none cursor-pointer transition-colors"
+            >
+              {unitOptions.map(opt => (
+                <option key={opt.id} value={opt.id} className="text-slate-900 font-semibold">
+                  {opt.name}
+                </option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute right-2.5 text-white/80 text-xs">▼</span>
+          </div>
+        ) : (
+          <h2 className="text-lg sm:text-xl font-bold tracking-[-0.02em] mb-3 sm:mb-4">{name}</h2>
+        )}
         
-        {/* 요약: 총비용 | 리테일매출 YOY | 비용 YOY (한 줄 컴팩트) */}
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 min-w-0">
+        {/* 요약: 총비용 | 전년비용 | 비용 YOY | 리테일 YOY (한 줄 컴팩트) */}
+        <div className="grid grid-cols-4 gap-1.5 sm:gap-2 min-w-0">
           <div
             className={`px-1.5 py-1.5 sm:px-2 sm:py-2 ${colors.yoyBox} rounded-xl text-white min-w-0 [container-type:inline-size] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]`}
           >
             <div className="text-[7px] sm:text-[8px] opacity-85 leading-none mb-0.5 truncate tracking-[0.02em]">
               총비용
             </div>
-            <div className="text-[clamp(16px,16cqi+8px,22px)] sm:text-[clamp(17px,14cqi+8px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
+            <div className="text-[clamp(13px,13cqi+5px,22px)] sm:text-[clamp(14px,12cqi+6px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
               {formatAmount(displayTotalCost, currency)}
             </div>
           </div>
           <div
             className={`px-1.5 py-1.5 sm:px-2 sm:py-2 ${colors.yoyBox} rounded-xl text-white min-w-0 [container-type:inline-size] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] ${
-              retailSalesYoYPercent === null ? 'opacity-75' : ''
+              displayTotalCostPrev === null ? 'opacity-75' : ''
             }`}
           >
             <div className="text-[7px] sm:text-[8px] opacity-85 leading-none mb-0.5 truncate tracking-[0.02em]">
-              리테일 YOY
+              전년비용
             </div>
-            <div className="text-[clamp(16px,16cqi+8px,22px)] sm:text-[clamp(17px,14cqi+8px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
-              {retailSalesYoYPercent !== null ? `${retailSalesYoYPercent}%` : '—'}
+            <div className="text-[clamp(13px,13cqi+5px,22px)] sm:text-[clamp(14px,12cqi+6px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
+              {formatAmount(displayTotalCostPrev, currency)}
             </div>
           </div>
           <div
@@ -421,10 +455,22 @@ export default function BusinessUnitCard({
               비용 YOY
             </div>
             <div
-              className="text-[clamp(16px,16cqi+8px,22px)] sm:text-[clamp(17px,14cqi+8px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]"
+              className="text-[clamp(13px,13cqi+5px,22px)] sm:text-[clamp(14px,12cqi+6px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]"
               title={totalYoY.delta ?? undefined}
             >
               {totalYoY.pct !== null ? `${totalYoY.pct}%` : '—'}
+            </div>
+          </div>
+          <div
+            className={`px-1.5 py-1.5 sm:px-2 sm:py-2 ${colors.yoyBox} rounded-xl text-white min-w-0 [container-type:inline-size] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] ${
+              retailSalesYoYPercent === null ? 'opacity-75' : ''
+            }`}
+          >
+            <div className="text-[7px] sm:text-[8px] opacity-85 leading-none mb-0.5 truncate tracking-[0.02em]">
+              리테일 YOY
+            </div>
+            <div className="text-[clamp(13px,13cqi+5px,22px)] sm:text-[clamp(14px,12cqi+6px,24px)] font-bold tabular-nums leading-none whitespace-nowrap tracking-[-0.02em]">
+              {retailSalesYoYPercent !== null ? `${retailSalesYoYPercent}%` : '—'}
             </div>
           </div>
         </div>
@@ -444,20 +490,43 @@ export default function BusinessUnitCard({
           </div>
           <div>
             <div className="text-gray-500">인원수</div>
-            <div className="font-semibold text-gray-800">
-              {displayHeadcount !== null && displayHeadcount !== undefined 
-                ? (
-                  <>
-                    {Math.round(displayHeadcount).toLocaleString()}명
-                    {headcountYoY !== null && (
-                      <span className="text-sm font-normal text-gray-600 ml-1">
-                        ({headcountYoY >= 0 ? '+' : ''}{Math.round(headcountYoY)}명)
+            {splitHeadcount ? (
+              // 합산 값(재무식·전체 탭)은 사무실/매장을 나눠 두 줄로 — 성격이 다른 인원이라 합만 보면 오해
+              <div className="space-y-0.5 leading-tight">
+                {(
+                  [
+                    ['사무실', officeBasis, officeBasisPrev],
+                    ['매장', storeBasis, storeBasisPrev],
+                  ] as const
+                ).map(([label, curr, prev]) => (
+                  <div key={label} className="whitespace-nowrap">
+                    <span className="text-gray-500 mr-1">{label}</span>
+                    <span className="font-semibold text-gray-800">{headcountText(curr)}</span>
+                    {headcountDelta(curr, prev) !== null && (
+                      <span className="text-[11px] font-normal text-gray-600 ml-1">
+                        ({headcountDelta(curr, prev)! >= 0 ? '+' : ''}
+                        {headcountDelta(curr, prev)})
                       </span>
                     )}
-                  </>
-                )
-                : '-'}
-            </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="font-semibold text-gray-800">
+                {displayHeadcount !== null && displayHeadcount !== undefined
+                  ? (
+                    <>
+                      {Math.round(displayHeadcount).toLocaleString()}명
+                      {headcountYoY !== null && (
+                        <span className="text-sm font-normal text-gray-600 ml-1">
+                          ({headcountYoY >= 0 ? '+' : ''}{Math.round(headcountYoY)}명)
+                        </span>
+                      )}
+                    </>
+                  )
+                  : '-'}
+              </div>
+            )}
           </div>
           <div className="relative group/retail">
             <div className="text-gray-500">
@@ -466,7 +535,7 @@ export default function BusinessUnitCard({
                 <span className="ml-1 text-[10px] text-gray-400 align-middle">ⓘ</span>
               )}
             </div>
-            <div className="font-semibold text-gray-800">
+            <div className="font-semibold text-gray-800 tabular-nums whitespace-nowrap">
               {retailSales !== null && retailSales !== undefined
                 ? formatAmount(retailSalesDisplay, currency)
                 : '-'}
@@ -532,11 +601,10 @@ export default function BusinessUnitCard({
           </div>
         </div>
         
-        {/* 인당 인건비 / 인당 복리비 (재무식은 인건비만 — 복리비는 '기타'에 포함) */}
+        {/* 인당 인건비 / 인당 복리비 — 재무식은 인원 기준이 섞여 있어 표시하지 않는다 */}
+        {!isFinancial && (
         <div
-          className={`grid ${
-            isFinancial ? 'grid-cols-1' : 'grid-cols-2'
-          } gap-2 sm:gap-4 mb-3 sm:mb-4 text-xs sm:text-sm rounded-xl border border-slate-200/70 bg-white/80 px-3 py-2.5 shadow-sm shadow-slate-200/40`}
+          className="grid grid-cols-2 gap-2 sm:gap-4 mb-3 sm:mb-4 text-xs sm:text-sm rounded-xl border border-slate-200/70 bg-white/80 px-3 py-2.5 shadow-sm shadow-slate-200/40"
         >
           <div>
             <div className="text-gray-500">인당 인건비</div>
@@ -555,26 +623,25 @@ export default function BusinessUnitCard({
                 : '-'}
             </div>
           </div>
-          {!isFinancial && (
-            <div>
-              <div className="text-gray-500">인당 복리비</div>
-              <div className="font-semibold text-gray-800">
-                {welfarePerPerson !== null && welfarePerPerson !== undefined
-                  ? (
-                    <>
-                      {formatPerPerson(welfarePerPerson, currency)}
-                      {welfarePerPersonPrev !== null && (
-                        <span className="text-sm font-normal text-gray-600 ml-1">
-                          ({formatPerPersonDelta(welfarePerPerson, welfarePerPersonPrev, currency) ?? '—'})
-                        </span>
-                      )}
-                    </>
-                  )
-                  : '-'}
-              </div>
+          <div>
+            <div className="text-gray-500">인당 복리비</div>
+            <div className="font-semibold text-gray-800">
+              {welfarePerPerson !== null && welfarePerPerson !== undefined
+                ? (
+                  <>
+                    {formatPerPerson(welfarePerPerson, currency)}
+                    {welfarePerPersonPrev !== null && (
+                      <span className="text-sm font-normal text-gray-600 ml-1">
+                        ({formatPerPersonDelta(welfarePerPerson, welfarePerPersonPrev, currency) ?? '—'})
+                      </span>
+                    )}
+                  </>
+                )
+                : '-'}
             </div>
-          )}
+          </div>
         </div>
+        )}
 
         {/* 관리식: 직접비/영업비 탭 + 대분류 표 / 재무식: 연결계정과목 표 */}
         <CostTypeTabs
@@ -594,21 +661,12 @@ export default function BusinessUnitCard({
           salaryPerPersonDenominator={salarySubPerPersonDenominator}
           costBasis={costBasis}
           financialCosts={financialCosts}
+          financialPkg={data.재무식PKG}
           currency={currency}
           exchangeRates={exchangeRates}
           period={period}
           prevPeriod={prevPeriod}
-          showPrevYearAmount={showPrevYearAmount}
         />
-        
-        {/* 전체 대시보드 보기 버튼 */}
-        <Link href={`/cost/${id}`}>
-          <button
-            className={`w-full mt-4 sm:mt-6 py-2.5 sm:py-3 text-sm sm:text-base rounded-xl text-white font-semibold tracking-[-0.01em] transition-all ${colors.button}`}
-          >
-            전체 대시보드 보기 &gt;
-          </button>
-        </Link>
       </div>
     </div>
   );

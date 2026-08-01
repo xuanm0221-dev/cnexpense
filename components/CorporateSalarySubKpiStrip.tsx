@@ -149,14 +149,15 @@ type Props = {
 };
 
 export default function CorporateSalarySubKpiStrip({ cards, costType }: Props) {
-  const costLabel = costType === '직접비' ? '직접비' : '영업비';
+  const costLabel = costType;
 
   return (
     <section
       className="mb-5"
       aria-label={`법인 급여 중분류 KPI (${costLabel})`}
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      {/* 카드 안 표가 최소 520px라 2열까지만 — 그 이상 쪼개면 YTD 열이 잘린다 */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {cards.map(card => (
           <SalarySubKpiCard key={card.title} model={card} costLabel={costLabel} />
         ))}

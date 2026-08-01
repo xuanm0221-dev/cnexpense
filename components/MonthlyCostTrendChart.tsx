@@ -86,21 +86,31 @@ function contrastTextForBg(bgHex: string): string {
   return relativeLuminance(bgHex) > 0.55 ? '#1f2937' : '#ffffff';
 }
 
+/**
+ * 글자 폭(em 합). 한글·한자·전각기호는 약 1em, 라틴·숫자·기호는 약 0.58em.
+ * '감가상각비'처럼 긴 한글 라벨이 막대 밖으로 새지 않게 하려면 이 구분이 필요하다.
+ */
+function estimateLabelEm(label: string): number {
+  let em = 0;
+  for (const ch of label) {
+    em += /[ᄀ-ᇿ⺀-〿㄰-㆏㐀-䶿一-鿿가-힯＀-￯]/.test(ch)
+      ? 1
+      : 0.58;
+  }
+  return Math.max(em, 0.58);
+}
+
 /** 막대 안에 들어갈 수 있는 폰트 크기(px); 불가면 null */
 function fitBarLabelFontSize(label: string, barW: number, h: number): number | null {
   const MIN_H = 13;
   const MIN_W = 20;
   if (h < MIN_H || barW < MIN_W) return null;
-  const len = Math.max(label.length, 1);
-  let fs = Math.min(11, (barW * 0.88) / (len * 0.58), h * 0.4);
+  const em = estimateLabelEm(label);
+  // 가로는 막대 폭의 90%, 세로는 막대 높이의 40% 안에서 최대 11px
+  let fs = Math.min(11, (barW * 0.9) / em, h * 0.4);
   fs = Math.floor(fs * 10) / 10;
   if (fs < 5) return null;
-  const estW = len * fs * 0.58;
-  if (estW > barW * 0.9 || fs > h * 0.36) {
-    fs = Math.min(fs, (barW * 0.88) / (len * 0.58), h * 0.36);
-    fs = Math.floor(fs * 10) / 10;
-  }
-  if (fs < 5 || len * fs * 0.58 > barW * 0.92) return null;
+  if (em * fs > barW * 0.92) return null;
   return fs;
 }
 
@@ -136,12 +146,18 @@ function formatYtdColumnHeader(monthKey: string): string {
 }
 
 type CostSide = '직접비' | '영업비';
+/** 홈 대시보드는 카드·표와 같은 '전체' 탭을 함께 쓴다 */
+type ChartCostType = CostSide | '전체';
 
 interface MonthlyCostTrendChartProps {
   categoryData: CategoryData;
   months: string[];
-  costType: CostSide;
-  onCostTypeChange: (t: CostSide) => void;
+  costType: ChartCostType;
+  onCostTypeChange: (t: ChartCostType) => void;
+  /** '전체' 탭 노출 (홈). 상세 페이지는 직접비/영업비만 */
+  showTotalTab?: boolean;
+  /** 우측 요약 표(계정별 당월·YTD) 노출. 홈은 위 매트릭스 표와 겹쳐서 숨긴다 */
+  showSideSummary?: boolean;
   /** 재무식이면 직접/영업 탭을 숨기고 연결계정과목 그대로 표시 */
   costBasis?: CostBasis;
   /** 표시 통화 — KRW면 categoryData가 이미 원화로 환산되어 들어온다 */
@@ -175,6 +191,8 @@ export default function MonthlyCostTrendChart({
   months,
   costType,
   onCostTypeChange,
+  showTotalTab = false,
+  showSideSummary = true,
   costBasis = '관리식',
   currency = 'CNY',
   highlightMonthKey,
@@ -196,9 +214,15 @@ export default function MonthlyCostTrendChart({
     legendSelectedProp !== undefined && onLegendSelectedChange !== undefined;
   const legendSelected = isLegendControlled ? legendSelectedProp! : legendSelectedInternal;
 
+  // 정렬은 대분류 고정 순서 — '전체'도 카드와 같게 직접비 순서를 쓴다
+  const sortSide: CostSide | undefined = isFinancialBasis
+    ? undefined
+    : costType === '전체'
+      ? '직접비'
+      : costType;
   const sortedCategories = useMemo(
-    () => getSortedCategoriesForMonths(categoryData, months, isFinancialBasis ? undefined : costType),
-    [categoryData, months, costType, isFinancialBasis]
+    () => getSortedCategoriesForMonths(categoryData, months, sortSide),
+    [categoryData, months, sortSide]
   );
 
   useEffect(() => {
@@ -342,7 +366,7 @@ export default function MonthlyCostTrendChart({
     [plotH, yoyMin, yoyMax]
   );
 
-  const tabBtn = (side: CostSide, active: boolean) => (
+  const tabBtn = (side: ChartCostType, active: boolean) => (
     <button
       type="button"
       onClick={() => onCostTypeChange(side)}
@@ -462,6 +486,7 @@ export default function MonthlyCostTrendChart({
               </h2>
               {!isFinancialBasis && (
                 <div className="flex items-center gap-2 shrink-0 rounded-full bg-slate-50/90 px-1.5 py-1 ring-1 ring-slate-200/80">
+                  {showTotalTab && tabBtn('전체', costType === '전체')}
                   {tabBtn('영업비', costType === '영업비')}
                   {tabBtn('직접비', costType === '직접비')}
                 </div>
@@ -470,8 +495,8 @@ export default function MonthlyCostTrendChart({
             </div>
             <p className="text-xs sm:text-sm text-slate-500 mt-1.5 leading-relaxed">
               기준월을 끝으로 하는 연속 {months.length}개월·대분류 구성 및 전년 동월 대비 증감률(지수%,
-              전년=100). 막대·YOY 곡선은 상단 범례에서 선택한 대분류만 반영하며, 우측 표는 항상 전체 합계·전
-              대분류를 표시합니다.
+              전년=100). 막대·YOY 곡선은 상단 범례에서 선택한 대분류만 반영합니다.
+              {showSideSummary && ' 우측 표는 항상 전체 합계·전 대분류를 표시합니다.'}
             </p>
           </div>
           <button
@@ -507,7 +532,7 @@ export default function MonthlyCostTrendChart({
           ) : (
             <div className="w-full" style={{ minHeight: 440 }}>
               <div className="flex flex-col md:flex-row md:items-start gap-4 w-full">
-                <div className="w-full md:w-3/4 min-w-0 shrink-0">
+                <div className={`w-full min-w-0 ${showSideSummary ? 'md:w-3/4 shrink-0' : ''}`}>
                   <svg
                     viewBox={`0 0 ${VB_W} ${VB_H}`}
                     className="w-full h-auto block text-gray-500 [font-family:system-ui,Segoe_UI,sans-serif]"
@@ -701,8 +726,9 @@ export default function MonthlyCostTrendChart({
                       )}
                       {segs.map((s, si) => {
                         const isTop = si === segs.length - 1;
+                        // 재무식은 연결계정과목이 5개뿐이라 전부 시도 (칸이 좁으면 자동 생략)
                         const showLabel =
-                          CATEGORIES_WITH_IN_BAR_LABEL.has(s.cat) &&
+                          (isFinancialBasis || CATEGORIES_WITH_IN_BAR_LABEL.has(s.cat)) &&
                           s.h >= 1;
                         const labelFs = showLabel
                           ? fitBarLabelFontSize(s.cat, barW, s.h)
@@ -806,19 +832,21 @@ export default function MonthlyCostTrendChart({
                 })}
                   </svg>
                 </div>
-                <div className="w-full md:w-1/4 md:min-w-[11rem] shrink-0 md:pl-1">
-                  {tooltipRow && (
-                    <ChartTooltip
-                      row={tooltipRow}
-                      sortedCategories={sortedCategories}
-                      categoryData={categoryData}
-                      highlightCategories={legendSelected}
-                      isBaselineMonth={
-                        hoverIdx === null && tooltipRow.monthKey === highlightMonthKey
-                      }
-                    />
-                  )}
-                </div>
+                {showSideSummary && (
+                  <div className="w-full md:w-1/4 md:min-w-[11rem] shrink-0 md:pl-1">
+                    {tooltipRow && (
+                      <ChartTooltip
+                        row={tooltipRow}
+                        sortedCategories={sortedCategories}
+                        categoryData={categoryData}
+                        highlightCategories={legendSelected}
+                        isBaselineMonth={
+                          hoverIdx === null && tooltipRow.monthKey === highlightMonthKey
+                        }
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

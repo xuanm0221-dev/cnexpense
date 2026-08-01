@@ -73,6 +73,8 @@ const DETAIL_TREND_NAMED: Record<string, string> = {
   세금과공과: '#E7C86D',
   출장비: '#9E87C2',
   기타: '#A6907B',
+  // 재무식 연결계정과목 — 인건비는 감가상각비(파랑)와 안 겹치게 민트
+  인건비: '#86D2BE',
 };
 
 /** 상세 트렌드 차트: 위 고정 매핑만 사용, 미포함 대분류는 DETAIL_STACK_PALETTE[fallbackIndex] */

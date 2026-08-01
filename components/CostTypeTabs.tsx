@@ -10,6 +10,7 @@ import {
   CategoryData,
   CostBasis,
   CostType,
+  GlBreakdownByCategory,
   ViewMode,
   MonthlyAmounts,
   WelfareBreakdownSide,
@@ -35,17 +36,31 @@ const SALARY_SUB_LABELS = ['기본급', '성과급', 'Red Pack', '외주/PT', '�
 
 const WELFARE_L2_ORDER = ['보험/공적금', '주재원', '현지직원'] as const;
 
-/** 모바일: 세로 스택 / 데스크톱: 4열 (전년 금액 표시 시 5열) */
+/**
+ * 컬럼 폭 — 첫 컬럼(대분류/연결계정과목)이 두 줄로 접히지 않도록 넉넉히 잡는다.
+ * 재무식(전년금액 포함)은 5열, 관리식은 4열.
+ */
+const GRID_COLS_WITH_PREV = 'md:grid-cols-[minmax(6.5rem,1.6fr)_1fr_1fr_1fr_0.85fr]';
+const GRID_COLS_BASE = 'md:grid-cols-[minmax(6rem,1.5fr)_1fr_1fr_0.85fr]';
+
+/** 모바일: 세로 스택 / 데스크톱: 그리드 */
 const rowGridClassFor = (withPrev: boolean) =>
   `p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid ${
-    withPrev ? 'md:grid-cols-5' : 'md:grid-cols-4'
-  } md:gap-3 lg:gap-4 md:items-center hover:bg-slate-50/70 transition-colors text-xs sm:text-sm`;
+    withPrev ? GRID_COLS_WITH_PREV : GRID_COLS_BASE
+  } md:gap-2 lg:gap-3 md:items-center hover:bg-slate-50/70 transition-colors text-xs sm:text-sm`;
 
 const metricCellClass =
   'flex justify-between items-baseline gap-2 md:block md:text-right tabular-nums';
 
 const subRowGridClass =
   'p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid md:grid-cols-4 md:gap-3 lg:gap-4 md:items-center text-[11px] sm:text-xs md:text-sm border-b border-dotted border-slate-200/80';
+
+/** 재무식 GL/조정 하위행 — 상위 행과 같은 컬럼 폭 */
+const financialSubRowClass =
+  `p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid ${GRID_COLS_WITH_PREV} md:gap-2 lg:gap-3 md:items-center text-[11px] sm:text-xs md:text-sm border-b border-dotted border-slate-200/80`;
+
+/** 조정분개 하위행 라벨 (전처리에서 부여) */
+const ADJUSTMENT_PKG_LABEL = '조정';
 
 function mergeSalarySide(
   a: Record<string, MonthlyAmounts> | undefined,
@@ -145,14 +160,14 @@ interface CostTypeTabsProps {
   costBasis?: CostBasis;
   /** 재무식 데이터 (연결계정과목 → 월별 금액) */
   financialCosts?: CategoryData;
+  /** 재무식 하위 분해 (연결계정과목 → pkg 계정과목 / '조정') */
+  financialPkg?: GlBreakdownByCategory;
   /** 표시 통화 및 환율 (KRW는 재무식에서만) */
   currency?: Currency;
   exchangeRates?: ExchangeRateData | null;
   /** 조회 기간 (당월/누적/분기) 과 전년 동기간 */
   period: Period;
   prevPeriod: Period;
-  /** 재무식에서 전년 금액 컬럼 표시 (헤더 토글) */
-  showPrevYearAmount?: boolean;
 }
 
 export default function CostTypeTabs({
@@ -172,15 +187,15 @@ export default function CostTypeTabs({
   onWelfareSubExpandedChange,
   costBasis = '관리식',
   financialCosts,
+  financialPkg,
   currency = 'CNY',
   exchangeRates = null,
   period,
   prevPeriod,
-  showPrevYearAmount = false,
 }: CostTypeTabsProps) {
   const isFinancial = costBasis === '재무식';
-  /** 전년 금액 컬럼은 재무식에서만 */
-  const withPrevColumn = isFinancial && showPrevYearAmount;
+  /** 재무식은 전년 금액 컬럼을 항상 표시 */
+  const withPrevColumn = isFinancial;
   const rowGridClass = rowGridClassFor(withPrevColumn);
   const hasDirectCosts = Object.keys(directCosts).length > 0;
   const hasOperatingCosts = Object.keys(operatingCosts).length > 0;
@@ -188,6 +203,37 @@ export default function CostTypeTabs({
   const [internalActiveTab, setInternalActiveTab] = useState<CostType>('전체');
   const [internalSalaryExpanded, setInternalSalaryExpanded] = useState(false);
   const [internalWelfareExpanded, setInternalWelfareExpanded] = useState(false);
+  /** 재무식: 연결계정과목별 GL/조정 펼침 */
+  const [financialExpanded, setFinancialExpanded] = useState<Set<string>>(() => new Set());
+  const toggleFinancialExpanded = (category: string) =>
+    setFinancialExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+
+  /**
+   * 연결계정과목 하위 = pkg 계정과목들 + 조정.
+   * 금액 큰 순으로 정렬하고 '조정'은 항상 마지막.
+   */
+  const financialSplitOf = (category: string) => {
+    const pkgMap = financialPkg?.[category];
+    if (!pkgMap) return [];
+    return Object.entries(pkgMap)
+      .map(([label, monthly]) => ({
+        label,
+        monthly,
+        amount: periodValue(fromMonthly(monthly), period, currency, exchangeRates),
+      }))
+      .filter(r => r.amount !== 0)
+      .sort((a, b) => {
+        const aAdj = a.label === ADJUSTMENT_PKG_LABEL;
+        const bAdj = b.label === ADJUSTMENT_PKG_LABEL;
+        if (aAdj !== bAdj) return aAdj ? 1 : -1;
+        return Math.abs(b.amount ?? 0) - Math.abs(a.amount ?? 0);
+      });
+  };
 
   const activeTab = externalActiveTab ?? internalActiveTab;
   const setActiveTab = onTabChange ?? setInternalActiveTab;
@@ -316,6 +362,7 @@ export default function CostTypeTabs({
       green: isActive ? 'bg-emerald-100/95 text-emerald-800 border-emerald-300 shadow-sm shadow-emerald-200/50' : 'bg-white/90 text-slate-600 border-slate-200 hover:bg-slate-50',
       gray: isActive ? 'bg-slate-100/95 text-slate-800 border-slate-300 shadow-sm shadow-slate-200/50' : 'bg-white/90 text-slate-600 border-slate-200 hover:bg-slate-50',
       purple: isActive ? 'bg-violet-100/95 text-violet-800 border-violet-300 shadow-sm shadow-violet-200/50' : 'bg-white/90 text-slate-600 border-slate-200 hover:bg-slate-50',
+      navy: isActive ? 'bg-[#e8eef7] text-[#16305c] border-[#a8bcd9] shadow-sm shadow-[#16305c]/15' : 'bg-white/90 text-slate-600 border-slate-200 hover:bg-slate-50',
     };
     return baseColors[color as keyof typeof baseColors] || baseColors.gray;
   };
@@ -363,14 +410,14 @@ export default function CostTypeTabs({
         <div className="min-h-0 md:rounded-xl md:border md:border-slate-200/75 md:bg-slate-50/55 shadow-sm shadow-slate-200/30">
           <div
             className={`hidden md:grid ${
-              withPrevColumn ? 'md:grid-cols-5' : 'md:grid-cols-4'
-            } md:gap-3 lg:gap-4 sticky top-0 z-10 px-2 sm:px-3 py-2 mb-2 text-xs text-slate-500 font-semibold border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-sm`}
+              withPrevColumn ? GRID_COLS_WITH_PREV : GRID_COLS_BASE
+            } md:gap-2 lg:gap-3 sticky top-0 z-10 px-2 sm:px-3 py-2 mb-2 text-xs text-slate-500 font-semibold border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-sm`}
           >
-            <div>{isFinancial ? '연결계정과목' : '대분류'}</div>
-            <div className="text-right">금액</div>
-            {withPrevColumn && <div className="text-right">전년금액</div>}
-            <div className="text-right">YOY금액</div>
-            <div className="text-right">YoY</div>
+            <div className="whitespace-nowrap">{isFinancial ? '연결계정과목' : '대분류'}</div>
+            <div className="text-right whitespace-nowrap">금액</div>
+            {withPrevColumn && <div className="text-right whitespace-nowrap">전년금액</div>}
+            <div className="text-right whitespace-nowrap">YOY금액</div>
+            <div className="text-right whitespace-nowrap">YoY</div>
           </div>
           <div className="space-y-1.5 sm:space-y-2">
           {categories.map((category) => {
@@ -400,11 +447,18 @@ export default function CostTypeTabs({
               welfareSideResolved &&
               visibleWelfareL2.length > 0;
 
+            // 재무식: GL(장부) / 조정(IFRS 조정분개) 분해
+            const splitRows = isFinancial ? financialSplitOf(category) : [];
+            const showFinancialToggle = splitRows.length > 1;
+            const financialOpen = financialExpanded.has(category);
+
             return (
               <div key={category}>
                 <div className={`${rowGridClass} ${strongDividerClass}`}>
                   <div className="flex items-start justify-between gap-2 min-w-0 font-medium text-gray-800">
-                    <span className="min-w-0 flex-1 break-words leading-snug">{category}</span>
+                    <span className="min-w-0 flex-1 leading-snug md:whitespace-nowrap">
+                      {category}
+                    </span>
                     {showSalaryToggle && (
                       <button
                         type="button"
@@ -425,6 +479,17 @@ export default function CostTypeTabs({
                         aria-label={welfareExpanded ? '복리비 중분류 접기' : '복리비 중분류 펼치기'}
                       >
                         {welfareExpanded ? '−' : '+'}
+                      </button>
+                    )}
+                    {showFinancialToggle && (
+                      <button
+                        type="button"
+                        onClick={() => toggleFinancialExpanded(category)}
+                        className="shrink-0 inline-flex items-center justify-center p-0.5 min-w-[1.25rem] text-sm font-medium leading-none text-gray-500 hover:text-gray-900"
+                        aria-expanded={financialOpen}
+                        aria-label={financialOpen ? `${category} GL·조정 접기` : `${category} GL·조정 펼치기`}
+                      >
+                        {financialOpen ? '−' : '+'}
                       </button>
                     )}
                   </div>
@@ -469,6 +534,49 @@ export default function CostTypeTabs({
                     </div>
                   </div>
                 </div>
+                {showFinancialToggle && financialOpen && (
+                  <div className="ml-2 sm:ml-4 md:ml-5 mt-1 space-y-1 pl-2 sm:pl-3 mb-1.5 sm:mb-2">
+                    {splitRows.map(({ label, monthly }) => {
+                      const acc = fromMonthly(monthly);
+                      const cur = periodValue(acc, period, currency, exchangeRates);
+                      const prv = periodValue(acc, prevPeriod, currency, exchangeRates);
+                      const idx = yoyIndex(cur, prv);
+                      const delta = prv === 0 ? null : formatDelta(cur, prv, currency);
+                      return (
+                        <div key={label} className={financialSubRowClass}>
+                          <div className="text-gray-500 pl-0 md:pl-1 min-w-0 leading-snug md:whitespace-nowrap">
+                            ㄴ {label}
+                          </div>
+                          <div className={metricCellClass}>
+                            <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">금액</span>
+                            <span className="text-right text-gray-800">{formatAmount(cur, currency)}</span>
+                          </div>
+                          <div className={metricCellClass}>
+                            <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">전년금액</span>
+                            <span className="text-right text-gray-500">{formatAmount(prv, currency)}</span>
+                          </div>
+                          <div className={metricCellClass}>
+                            <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">YOY금액</span>
+                            <span className="text-right text-gray-700 tabular-nums">
+                              {delta === null ? <span className="text-gray-400">—</span> : delta}
+                            </span>
+                          </div>
+                          <div className={metricCellClass}>
+                            <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">YoY</span>
+                            <div className="text-right">
+                              {idx === null ? (
+                                <span className="text-gray-400">N/A</span>
+                              ) : (
+                                <span className={idx >= 100 ? 'text-red-600' : 'text-blue-600'}>{idx}%</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {showSalaryToggle && salaryExpanded && (
                   <div className="ml-2 sm:ml-4 md:ml-5 mt-1 space-y-1 pl-2 sm:pl-3 mb-1.5 sm:mb-2">
                     {visibleSalarySubLabels.map((label) => {

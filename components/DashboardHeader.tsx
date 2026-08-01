@@ -23,8 +23,6 @@ interface DashboardHeaderProps {
   viewMode: ViewMode;
   onMonthChange: (month: string) => void;
   onViewModeChange: (mode: ViewMode) => void;
-  showOtherBU: boolean;
-  onToggleOtherBU: () => void;
   /** 비용 데이터가 없어 선택할 수 없는 기간 (분기 등) */
   disabledViewModes?: ViewMode[];
   costBasis: CostBasis;
@@ -37,9 +35,6 @@ interface DashboardHeaderProps {
   appliedRate: number | null;
   /** 환율 적용 기준 라벨 ('월평균' | '기간평균') */
   appliedRateLabel: string;
-  /** 재무식 표의 전년 금액 컬럼 표시 여부 */
-  showPrevYearAmount: boolean;
-  onTogglePrevYearAmount: () => void;
 }
 
 export default function DashboardHeader({
@@ -48,8 +43,6 @@ export default function DashboardHeader({
   viewMode,
   onMonthChange,
   onViewModeChange,
-  showOtherBU,
-  onToggleOtherBU,
   disabledViewModes,
   costBasis,
   onCostBasisChange,
@@ -58,8 +51,6 @@ export default function DashboardHeader({
   onOpenRateTable,
   appliedRate,
   appliedRateLabel,
-  showPrevYearAmount,
-  onTogglePrevYearAmount,
 }: DashboardHeaderProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -114,8 +105,6 @@ export default function DashboardHeader({
               onOpenRateTable={onOpenRateTable}
               appliedRate={appliedRate}
               appliedRateLabel={appliedRateLabel}
-              showPrevYearAmount={showPrevYearAmount}
-              onTogglePrevYearAmount={onTogglePrevYearAmount}
             />
           </div>
 
@@ -126,16 +115,6 @@ export default function DashboardHeader({
               selectedMonth={selectedMonth}
               onChange={onMonthChange}
             />
-          </div>
-
-          <div className="pb-3">
-            <button
-              type="button"
-              onClick={onToggleOtherBU}
-              className="px-4 py-2 bg-white/95 border border-slate-300 rounded-xl hover:bg-slate-50 transition-all text-sm font-semibold text-slate-700 shadow-sm shadow-slate-200/40"
-            >
-              {showOtherBU ? '기타 사업부 숨기기 ▲' : '기타 사업부 보기 ▼'}
-            </button>
           </div>
 
           {/* 전처리 명령 버튼 (우측 정렬) */}

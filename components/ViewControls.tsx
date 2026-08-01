@@ -5,7 +5,6 @@
  * - 기간 탭 (당월 / 누적(YTD) / 1~4분기)
  * - 관리식 / 재무식
  * - CNY / KRW + 환율표 (재무식일 때만)
- * - 전년금액 표시 토글 (재무식일 때만)
  */
 
 import { CostBasis, ViewMode } from '@/lib/types';
@@ -43,9 +42,6 @@ export interface ViewControlsProps {
   appliedRate: number | null;
   /** '월평균' | '기간평균' */
   appliedRateLabel: string;
-  /** 전년금액 컬럼 토글 (없으면 버튼 숨김) */
-  showPrevYearAmount?: boolean;
-  onTogglePrevYearAmount?: () => void;
 }
 
 export default function ViewControls({
@@ -59,8 +55,6 @@ export default function ViewControls({
   onOpenRateTable,
   appliedRate,
   appliedRateLabel,
-  showPrevYearAmount,
-  onTogglePrevYearAmount,
 }: ViewControlsProps) {
   const isFinancial = costBasis === '재무식';
 
@@ -147,22 +141,6 @@ export default function ViewControls({
           >
             환율표
           </button>
-
-          {onTogglePrevYearAmount && (
-            <button
-              type="button"
-              onClick={onTogglePrevYearAmount}
-              aria-pressed={showPrevYearAmount}
-              title="표에 전년 동기간 금액 컬럼 표시"
-              className={`px-3 py-2 rounded-xl border transition-all text-sm font-semibold shadow-sm shadow-slate-200/40 ${
-                showPrevYearAmount
-                  ? 'bg-blue-50 border-blue-300 text-blue-700'
-                  : 'bg-white/95 border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {showPrevYearAmount ? '전년금액 숨기기 ▲' : '전년금액 보기 ▼'}
-            </button>
-          )}
 
           {currency === 'KRW' && (
             <span

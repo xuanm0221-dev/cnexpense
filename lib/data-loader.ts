@@ -2,6 +2,7 @@
  * 비용 데이터 로딩
  */
 
+import type { AccountAnalysisData } from './account-analysis';
 import type { ExchangeRateData } from './exchange-rates';
 import {
   CostData,
@@ -88,6 +89,20 @@ export async function loadStoreHeadcountData(): Promise<StoreHeadcountData | nul
   } catch (err) {
     console.warn('[매장인원수] 데이터 로드 실패:', err);
     console.warn('[매장인원수] Python 전처리 스크립트를 실행하여 store-headcount.json 파일을 생성해주세요.');
+    return null;
+  }
+}
+
+/**
+ * 계정별 분석 데이터 로드 (적요 기반 구성).
+ * 없으면 null — 패널만 숨기고 나머지 화면은 그대로 동작한다.
+ */
+export async function loadAccountAnalysis(): Promise<AccountAnalysisData | null> {
+  try {
+    const data = await import('@/data/processed/account-analysis.json');
+    return data.default as unknown as AccountAnalysisData;
+  } catch (err) {
+    console.warn('[계정별분석] 데이터 로드 실패:', err);
     return null;
   }
 }

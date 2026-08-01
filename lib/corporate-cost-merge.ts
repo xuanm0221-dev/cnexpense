@@ -176,5 +176,13 @@ export function mergeCorporateBusinessUnitCosts(
     out.재무식GL설명 = finGlOut;
   }
 
+  const finPkgOut: GlBreakdownByCategory = {};
+  for (const buId of CORPORATE_BUSINESS_UNIT_IDS) {
+    mergeGlBreakdown(finPkgOut, unitData[buId]?.재무식PKG);
+  }
+  if (Object.keys(finPkgOut).length > 0) {
+    out.재무식PKG = finPkgOut;
+  }
+
   return out;
 }
