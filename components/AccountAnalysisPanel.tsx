@@ -9,7 +9,7 @@
  *   ③ 브랜드별 증감 — 코스트센터 기준. 급여·인건비·광고비·수주회·출장비만 (법인 선택 시)
  */
 
-import type { AccountAnalysisRow, AnalysisDelta } from '@/lib/account-analysis';
+import type { AccountAnalysisRow, AnalysisDelta, BrandDetail } from '@/lib/account-analysis';
 import type { Currency } from '@/lib/exchange-rates';
 import { formatAmount, currencyUnitLabel } from '@/utils/formatters';
 
@@ -73,6 +73,24 @@ function RowTag({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** 브랜드 1차 — 브랜드 증감 + 그 안의 구성 (광고비 등) */
+function BrandRow({ brand, currency }: { brand: BrandDetail; currency: Currency }) {
+  return (
+    <p className="flex items-start gap-1.5">
+      <span className="shrink-0 inline-block min-w-[4.6rem] text-[10px] font-semibold text-slate-600 bg-slate-100 rounded px-1.5 py-0.5 text-center">
+        {brand.label}
+      </span>
+      <span className="shrink-0 tabular-nums font-semibold w-[5.2rem] text-right">
+        <span className={toneOf(brand.delta)}>{signed(brand.delta, currency)}</span>
+        {brand.index !== null && <span className="text-slate-400 font-normal"> {brand.index}%</span>}
+      </span>
+      <span className="min-w-0 text-slate-500">
+        <DeltaList items={brand.buckets} currency={currency} limit={0} />
+      </span>
+    </p>
+  );
+}
+
 function AccountBlock({ row, currency }: { row: AccountAnalysisRow; currency: Currency }) {
   const up = row.index !== null && row.index >= 100;
 
@@ -114,6 +132,9 @@ function AccountBlock({ row, currency }: { row: AccountAnalysisRow; currency: Cu
             </span>
           </p>
         )}
+        {row.brandDetails.length > 0 ? (
+          row.brandDetails.map(brand => <BrandRow key={brand.label} brand={brand} currency={currency} />)
+        ) : (
         <p className="flex items-start">
           <RowTag>구성</RowTag>
           <span className="min-w-0">
@@ -128,7 +149,8 @@ function AccountBlock({ row, currency }: { row: AccountAnalysisRow; currency: Cu
             )}
           </span>
         </p>
-        {row.brands.length > 0 && (
+        )}
+        {row.brandDetails.length === 0 && row.brands.length > 0 && (
           <p className="flex items-start">
             <RowTag>브랜드</RowTag>
             <span className="min-w-0">

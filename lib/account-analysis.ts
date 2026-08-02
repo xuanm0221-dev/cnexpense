@@ -125,6 +125,9 @@ export function isEstimatedCategory(
   return Boolean(data?.metadata?.추정월?.[category]?.length);
 }
 
+/** 브랜드를 1차 축으로 보는 계정 — 브랜드별로 나누고 그 하위에 구성을 붙인다 */
+export const BRAND_FIRST_ACCOUNTS = new Set(['광고비', '광고선전비']);
+
 /** 브랜드(코스트센터) 구분 설명이 필요한 계정 — 나머지는 법인 합계만 본다 */
 export const BRAND_SPLIT_ACCOUNTS = new Set([
   '급여',
@@ -147,6 +150,11 @@ export interface AnalysisDelta {
   index: number | null;
 }
 
+/** 브랜드 한 곳의 증감 + 그 안의 구성 */
+export interface BrandDetail extends AnalysisDelta {
+  buckets: AnalysisDelta[];
+}
+
 export interface AccountAnalysisRow {
   category: string;
   /** 표시 통화 당기·전년 금액 */
@@ -167,6 +175,8 @@ export interface AccountAnalysisRow {
   buckets: AnalysisDelta[];
   /** 브랜드별 증감 — 브랜드 구분이 필요한 계정 & 법인 선택 시에만 */
   brands: AnalysisDelta[];
+  /** 브랜드를 1차 축으로 보는 계정 — 브랜드별 구성까지 (광고비 등) */
+  brandDetails: BrandDetail[];
   /** 인건비 계열에만 — 평균 인원 증감 */
   headcount: { office: number | null; store: number | null } | null;
 }
@@ -367,6 +377,37 @@ export function buildAccountAnalysis(input: BuildAnalysisInput): AccountAnalysis
           .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
       : [];
 
+    const brandFirst = needBrand && BRAND_FIRST_ACCOUNTS.has(category);
+    const brandDetails: BrandDetail[] = brandFirst
+      ? brandKeys
+          .map(brand => {
+            const monthly = mergeMonthly(Object.values(byBrand[brand]));
+            const c = periodCny(fromMonthly(monthly), period);
+            const p = periodCny(fromMonthly(monthly), prevPeriod);
+            const inner = Object.entries(byBrand[brand])
+              .map(([label, m]) => {
+                const bc = periodCny(fromMonthly(m), period);
+                const bp = periodCny(fromMonthly(m), prevPeriod);
+                return {
+                  label: shortSubLabel(label),
+                  delta: toDisplay(bc - bp),
+                  curr: isKrw ? bc * (currRate ?? 0) : bc,
+                  index: safeIndex(bc, bp),
+                };
+              })
+              .filter(b => b.curr !== 0 || b.delta !== 0);
+            return {
+              label: brand,
+              delta: toDisplay(c - p),
+              curr: isKrw ? c * (currRate ?? 0) : c,
+              index: safeIndex(c, p),
+              buckets: mergeSameLabel(inner),
+            };
+          })
+          .filter(b => b.curr !== 0 || b.delta !== 0)
+          .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+      : [];
+
     rows.push({
       category,
       curr,
@@ -376,6 +417,7 @@ export function buildAccountAnalysis(input: BuildAnalysisInput): AccountAnalysis
       fx,
       buckets,
       brands,
+      brandDetails,
       headcount:
         HEADCOUNT_ACCOUNTS.has(category) && headcount
           ? {
