@@ -26,9 +26,9 @@ function toneOf(value: number): string {
   return value > 0 ? 'text-rose-600' : value < 0 ? 'text-sky-700' : 'text-slate-500';
 }
 
-/** 상위 N개 + 나머지 묶음 */
+/** 상위 N개 + 나머지 묶음. limit 0이면 전부 표시 */
 function topDeltas(items: AnalysisDelta[], limit: number): AnalysisDelta[] {
-  if (items.length <= limit) return items;
+  if (limit <= 0 || items.length <= limit) return items;
   const head = items.slice(0, limit);
   const restDelta = items.slice(limit).reduce((s, i) => s + i.delta, 0);
   const restCurr = items.slice(limit).reduce((s, i) => s + i.curr, 0);
@@ -48,18 +48,27 @@ function DeltaList({
   const shown = topDeltas(items, limit);
   if (shown.length === 0) return <span className="text-slate-400">—</span>;
   return (
-    <span className="inline-flex flex-wrap gap-x-2 gap-y-0.5">
-      {shown.map(item => (
-        <span key={item.label} className="whitespace-nowrap">
+    <span className="inline-flex flex-wrap gap-x-3 gap-y-0.5">
+      {shown.map((item, i) => (
+        <span key={`${item.label}-${i}`} className="whitespace-nowrap">
           <span className="text-slate-600">{item.label}</span>{' '}
-          <span className={`tabular-nums font-medium ${toneOf(item.delta)}`}>
+          <span className={`tabular-nums font-semibold ${toneOf(item.delta)}`}>
             {signed(item.delta, currency)}
           </span>
           {item.index !== null && (
-            <span className="text-slate-400 tabular-nums"> ({item.index}%)</span>
+            <span className="text-slate-400 tabular-nums"> {item.index}%</span>
           )}
         </span>
       ))}
+    </span>
+  );
+}
+
+/** 줄 앞 태그 — ①②③ 대신 무엇을 보는 줄인지 바로 알 수 있게 */
+function RowTag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="shrink-0 inline-block w-[3.1rem] mr-1.5 text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1 py-0.5 text-center align-top">
+      {children}
     </span>
   );
 }
@@ -88,39 +97,43 @@ function AccountBlock({ row, currency }: { row: AccountAnalysisRow; currency: Cu
 
       <div className="space-y-1 text-[11px] leading-relaxed">
         {row.fx && (
-          <p>
-            <span className="text-slate-400 mr-1">①</span>
-            환율효과{' '}
-            <span className={`tabular-nums font-medium ${toneOf(row.fx.effect)}`}>
-              {signed(row.fx.effect, currency)}
-            </span>{' '}
-            제외 시 전년비{' '}
-            <span className={`tabular-nums font-medium ${toneOf(row.fx.volume)}`}>
-              {signed(row.fx.volume, currency)}
-            </span>
-            <span className="text-slate-500">
-              {' '}
-              (CNY 기준 {row.fx.cnyPct === null ? '—' : `${row.fx.cnyPct > 0 ? '+' : ''}${row.fx.cnyPct.toFixed(1)}%`})
+          <p className="flex items-start rounded bg-amber-50/70 px-1.5 py-1">
+            <RowTag>환율효과</RowTag>
+            <span className="min-w-0">
+              <span className={`tabular-nums font-semibold ${toneOf(row.fx.effect)}`}>
+                {signed(row.fx.effect, currency)}
+              </span>{' '}
+              제외 시 전년비{' '}
+              <span className={`tabular-nums font-semibold ${toneOf(row.fx.volume)}`}>
+                {signed(row.fx.volume, currency)}
+              </span>
+              <span className="text-slate-500">
+                {' '}
+                (CNY {row.fx.cnyPct === null ? '—' : `${row.fx.cnyPct > 0 ? '+' : ''}${row.fx.cnyPct.toFixed(1)}%`})
+              </span>
             </span>
           </p>
         )}
-        <p>
-          <span className="text-slate-400 mr-1">{row.fx ? '②' : '①'}</span>
-          <DeltaList items={row.buckets} currency={currency} limit={4} />
-          {row.headcount && (row.headcount.office !== null || row.headcount.store !== null) && (
-            <span className="text-slate-500">
-              {' '}
-              · 평균인원 {row.headcount.office !== null && `사무실 ${row.headcount.office >= 0 ? '+' : ''}${Math.round(row.headcount.office)}명`}
-              {row.headcount.office !== null && row.headcount.store !== null && ', '}
-              {row.headcount.store !== null && `매장 ${row.headcount.store >= 0 ? '+' : ''}${Math.round(row.headcount.store)}명`}
-            </span>
-          )}
+        <p className="flex items-start">
+          <RowTag>구성</RowTag>
+          <span className="min-w-0">
+            <DeltaList items={row.buckets} currency={currency} limit={0} />
+            {row.headcount && (row.headcount.office !== null || row.headcount.store !== null) && (
+              <span className="text-slate-500">
+                {' '}
+                · 평균인원 {row.headcount.office !== null && `사무실 ${row.headcount.office >= 0 ? '+' : ''}${Math.round(row.headcount.office)}명`}
+                {row.headcount.office !== null && row.headcount.store !== null && ', '}
+                {row.headcount.store !== null && `매장 ${row.headcount.store >= 0 ? '+' : ''}${Math.round(row.headcount.store)}명`}
+              </span>
+            )}
+          </span>
         </p>
         {row.brands.length > 0 && (
-          <p>
-            <span className="text-slate-400 mr-1">{row.fx ? '③' : '②'}</span>
-            <span className="text-slate-500 mr-1">브랜드</span>
-            <DeltaList items={row.brands} currency={currency} limit={5} />
+          <p className="flex items-start">
+            <RowTag>브랜드</RowTag>
+            <span className="min-w-0">
+              <DeltaList items={row.brands} currency={currency} limit={0} />
+            </span>
           </p>
         )}
       </div>

@@ -24,6 +24,8 @@ COST_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/비용파일")
 HEADCOUNT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/사무실인원수")
 HEADCOUNT_STORE_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/매장인원수")
 ADJUSTMENT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/조정분개")
+# 거래처(BP) 마스터 — 장부의 '상계 계정' 과 같은 코드 체계
+BP_MASTER_FILE = Path("D:/로컬파일/비용대시보드파일/BP.XLSX")
 MASTERS_DIR = BASE_DIR / "data" / "masters"
 OUTPUT_DIR = BASE_DIR / "data" / "processed"
 OUTPUT_FILE = OUTPUT_DIR / "aggregated-costs.json"
@@ -102,6 +104,42 @@ LEGACY_GL_REMAP = {
     ],
 }
 
+# 계정이 매체별로 잘게 나뉘어 있어 오히려 안 보이는 것 — 매체 단위로 묶는다.
+# (BP 조인으로 확인: 차오지투이지앤·TMALL광고비의 거래처가 阿里妈妈 = 티몰 광고)
+GL_GROUP = {
+    ('광고비', '광고선전비_차오지투이지앤'): '티몰 광고비',   # 万相台/超级推荐
+    ('광고비', '광고선전비_핀샤오바오'): '티몰 광고비',       # 品销宝
+    ('광고비', '광고선전비_TMALL광고비'): '티몰 광고비',
+    ('광고비', '광고선전비_쮜화산'): '티몰 광고비',           # 聚划算
+    ('광고비', '광고선전비_타오바오커'): '타오바오 광고비',    # 淘宝客
+    ('광고비', '광고선전비_틱톡_마이크로폰'): '틱톡 광고비',   # 抖音
+    ('광고비', '광고선전비_경준통 투입'): 'JD 광고비',        # 京准通
+
+    # 플랫폼수수료 — 계정명이 곧 플랫폼. 支付宝(Alipay)는 티몰 결제망이라 티몰로 묶는다.
+    ('플랫폼수수료', '지급수수료_Alipay 플랫폼사용료'): '티몰',
+    ('플랫폼수수료', '지급수수료_Alipay 운송보험'): '티몰',
+    ('플랫폼수수료', '지급수수료_Alipay 공제수수료'): '티몰',
+    ('플랫폼수수료', '지급수수료_Alipay 포인트수수료'): '티몰',
+    ('플랫폼수수료', '지급수수료_Alipay 보증금서비스'): '티몰',
+    ('플랫폼수수료', '지급수수료_Alipay TMALL'): '티몰',
+    ('플랫폼수수료', '지급수수료_수수료공제_틱톡'): '틱톡',
+    ('플랫폼수수료', '지급수수료_틱톡_보험인수'): '틱톡',
+    ('플랫폼수수료', '지급수수료_틱톡_다방송수수료'): '틱톡',
+    ('플랫폼수수료', '지급수수료_틱톡 공제'): '틱톡',
+    ('플랫폼수수료', '지급수수료_틱톡'): '틱톡',
+    ('플랫폼수수료', '지급수수료_JD 수수료 공제'): 'JD',
+    ('플랫폼수수료', '지급수수료_JD 보험인수'): 'JD',
+    ('플랫폼수수료', '지급수수료_JD 거래서비스요금'): 'JD',
+    ('플랫폼수수료', '지급수수료_JD 징또우'): 'JD',
+    ('플랫폼수수료', '지급수수료_JD'): 'JD',
+    ('플랫폼수수료', '지급수수료_위쳇몰'): '위챗',
+    ('플랫폼수수료', '플랫폼수수료(조정)'): 'VIP',   # 唯品会 JITX Platform ADJ
+
+    # 장부에서 보조금을 지급수수료 차감으로 잡은 것 —
+    # 조정분개의 '정부보조금'과 같은 항목이라 한 줄로 합친다 (대분류 무관)
+    ('*', '잡이익_보조금'): '정부보조금',   # = SUBSIDY_LABEL (아래 조정분개 라벨과 동일)
+}
+
 TEXT_SPLIT = {
     ('급여', '인건비'): [
         ('Red Pack', r'董事长'),
@@ -116,17 +154,105 @@ TEXT_SPLIT = {
         ('수주회_시스템', r'系统|订货系统|开发'),
         ('수주회_행사 일괄(계상)', r'TRADESHOW|tradeshow|Tradeshow|订货会|\bTS\b'),
     ],
+    # TP수수료는 플랫폼 단위로 합친다 (변동/매출연동 구분 없이 티몰·틱톡)
     ('TP수수료', '지급수수료_TP변동수수료'): [
-        ('TP수수료_틱톡(抖音)', r'抖音|Douyin|DOUYIN|틱톡'),
-        ('TP수수료_티몰', r'天猫|TMALL|Tmall|TP运营费|TP佣金'),
+        ('틱톡', r'抖音|Douyin|DOUYIN|틱톡'),
+        ('티몰', r'天猫|TMALL|Tmall|TP运营费|TP佣金'),
+        ('TP 기타', r'.'),
     ],
     ('TP수수료', '지급수수료_TP매출연동수수료'): [
-        ('TP매출연동_틱톡(抖音)', r'抖音|Douyin|DOUYIN'),
-        ('TP매출연동_티몰', r'天猫|TMALL|Tmall|销售佣金'),
+        ('틱톡', r'抖音|Douyin|DOUYIN'),
+        ('티몰', r'天猫|TMALL|Tmall|销售佣金'),
+        ('TP 기타', r'.'),
     ],
 }
 
+# 거래처가 서비스 종류를 사실상 결정하는 대분류 — BP를 적요보다 먼저 본다.
+# (26년 실측: 지급수수료는 BP→계정 지배도 77%, 광고비는 24%라 광고비는 적요 우선)
+LEGACY_BP_FIRST = {'지급수수료'}
+
+# TP 대행사 → 플랫폼. 적요에 天猫/抖音 표기가 없는 건은 대행사가 곧 플랫폼이다.
+BP_PLATFORM_RULES = [
+    ('티몰', r'思禾朴冶|古星'),
+    ('틱톡', r'博观瑞思|祈飞'),
+]
+_BP_PLATFORM_COMPILED = None
+
+
+def _bp_platform(bp_name):
+    global _BP_PLATFORM_COMPILED
+    if not bp_name:
+        return None
+    if _BP_PLATFORM_COMPILED is None:
+        import re
+        _BP_PLATFORM_COMPILED = [(n, re.compile(p)) for n, p in BP_PLATFORM_RULES]
+    for name, rx in _BP_PLATFORM_COMPILED:
+        if rx.search(bp_name):
+            return name
+    return None
+
+_BP_MASTER = None
 _LEGACY_COMPILED = None
+
+
+def _load_bp_master():
+    """BP.XLSX → 코드·거래처명·구분 (없으면 None)"""
+    global _BP_MASTER
+    if _BP_MASTER is not None:
+        return _BP_MASTER if len(_BP_MASTER) else None
+    if not BP_MASTER_FILE.exists():
+        print(f"  [주의] BP 마스터 없음 — 거래처 보정 스킵 ({BP_MASTER_FILE})")
+        _BP_MASTER = pd.DataFrame()
+        return None
+    try:
+        bp = pd.read_excel(BP_MASTER_FILE, dtype=str)
+    except Exception as e:
+        print(f"  [실패] BP 마스터 로드 실패: {e}")
+        _BP_MASTER = pd.DataFrame()
+        return None
+    bp.columns = [str(c).strip() for c in bp.columns]
+    bp = bp.rename(columns={'BP': '_bp코드', 'BP name': '_bp명', '구분': '_bp구분'})
+    for c in ('_bp코드', '_bp명', '_bp구분'):
+        if c not in bp.columns:
+            bp[c] = ''
+        bp[c] = bp[c].fillna('').astype(str).str.strip()
+    bp = bp[bp['_bp코드'] != ''].drop_duplicates(subset=['_bp코드'])
+    _BP_MASTER = bp[['_bp코드', '_bp명', '_bp구분']]
+    print(f"  - BP 마스터: {len(_BP_MASTER)}건")
+    return _BP_MASTER
+
+
+def build_bp_account_map(df):
+    """26년(최신 연도) 실적에서 (대분류, 거래처) → 계정 지배 관계를 학습.
+
+    한 거래처가 특정 계정에 80% 이상 몰릴 때만 채택한다. 하드코딩이 아니라
+    매 실행마다 최신 데이터에서 다시 배우므로 거래처가 바뀌어도 따라간다.
+    """
+    if df.empty or '_bp명' not in df.columns:
+        return {}
+
+    latest_year = df['연월'].str[:4].max()
+    work = df[(df['연월'].str[:4] == latest_year) & (df['_bp명'] != '')].copy()
+    if work.empty:
+        return {}
+    work['_gl'] = work['G/L 계정 설명'].fillna('').astype(str).str.strip()
+
+    # legacy(뭉친) 계정 자체는 학습에서 제외 — 현행 계정 체계만 배운다
+    legacy_gls = {gl for (_, gl) in LEGACY_GL_REMAP}
+    work = work[~work['_gl'].isin(legacy_gls)]
+    work['_amt'] = work['금액(전표 통화)'].abs()
+
+    out = {}
+    grouped = work.groupby(['대분류', '_bp명', '_gl'])['_amt'].sum().reset_index()
+    for (cat, bp), g in grouped.groupby(['대분류', '_bp명']):
+        total = g['_amt'].sum()
+        if total <= 0:
+            continue
+        top = g.loc[g['_amt'].idxmax()]
+        if top['_amt'] / total >= 0.8:
+            out[(cat, bp)] = top['_gl']
+    print(f"  - BP→계정 학습({latest_year}년): {len(out)}쌍")
+    return out
 _SPLIT_COMPILED = None
 
 
@@ -152,20 +278,34 @@ def _split_rules():
     return _SPLIT_COMPILED
 
 
-def _resolve_sublevel(category, gl, haystack):
-    """(구성 라벨, 추정여부) — 1차 계정, 필요 시 적요로 재분류/세분"""
+def _resolve_sublevel(category, gl, haystack, bp_name='', bp_map=None):
+    """(구성 라벨, 추정여부) — 1차 계정, 필요 시 거래처·적요로 재분류/세분"""
     key = (category, gl)
+
+    grouped = GL_GROUP.get(key) or GL_GROUP.get(('*', gl))
+    if grouped:
+        return grouped, False
 
     legacy = _legacy_rules().get(key)
     if legacy:
+        by_bp = (bp_map or {}).get((category, bp_name)) if bp_name else None
+        if by_bp and category in LEGACY_BP_FIRST:
+            return by_bp, True
         for name, rx in legacy:
             if rx.search(haystack):
                 return name, True
+        if by_bp:
+            return by_bp, True
         return f'(구){gl} 미분류', True
 
     split = _split_rules().get(key)
     if split:
         for name, rx in split:
+            # 적요에 플랫폼이 명시된 건이 우선. 못 찾았을 때만 대행사(BP)로 판정한다.
+            if name == 'TP 기타':
+                platform = _bp_platform(bp_name)
+                if platform:
+                    return platform, False
             if rx.search(haystack):
                 return name, False
 
@@ -331,10 +471,13 @@ def aggregate_account_analysis(mgmt_df, financial_df_rows):
     df['_gl'] = df['G/L 계정 설명'].fillna('').astype(str).str.strip()
     df.loc[df['_gl'] == '', '_gl'] = '(미지정)'
 
+    bp_map = build_bp_account_map(df)
+    bp_series = df['_bp명'] if '_bp명' in df.columns else pd.Series([''] * len(df), index=df.index)
     resolved = [
-        _resolve_sublevel(c, g, h)
-        for c, g, h in zip(df['대분류'], df['_gl'], df['_hay'])
+        _resolve_sublevel(c, g, h, b, bp_map)
+        for c, g, h, b in zip(df['대분류'], df['_gl'], df['_hay'], bp_series)
     ]
+    aggregate_account_analysis.bp_map = bp_map
     df['_bucket'] = [r[0] for r in resolved]
     df['_추정'] = [r[1] for r in resolved]
 
@@ -382,9 +525,11 @@ def aggregate_financial_analysis(df):
     work['_hay'] = _analysis_haystack(work)
     work['_gl'] = work['G/L 계정 설명'].fillna('').astype(str).str.strip()
     work.loc[work['_gl'] == '', '_gl'] = '(미지정)'
+    bp_map = getattr(aggregate_account_analysis, 'bp_map', {})
+    bp_series = work['_bp명'] if '_bp명' in work.columns else pd.Series([''] * len(work), index=work.index)
     work['구성'] = [
-        _resolve_sublevel(c if isinstance(c, str) else '', g, h)[0]
-        for c, g, h in zip(work['대분류'], work['_gl'], work['_hay'])
+        _resolve_sublevel(c if isinstance(c, str) else '', g, h, b, bp_map)[0]
+        for c, g, h, b in zip(work['대분류'], work['_gl'], work['_hay'], bp_series)
     ]
     grouped = work.groupby(
         ['연월', '사업부', '연결계정과목', '구성'], as_index=False
@@ -403,18 +548,17 @@ def apply_adjustments_analysis(fin_analysis_df, adjustments, allowed_months=None
 
     by_kind = getattr(load_adjustment_entries, 'by_kind', {})
     rows = []
-    for ym, kinds in by_kind.items():
+    for ym, by_key in by_kind.items():
         if allowed_months is not None and ym not in allowed_months:
             continue
-        for kind, by_link in kinds.items():
-            for link, amount in by_link.items():
-                rows.append({
-                    '연월': ym,
-                    '사업부': ADJUSTMENT_BUSINESS_UNIT,
-                    '연결계정과목': link,
-                    '구성': kind,
-                    '금액': amount,
-                })
+        for (link, label), amount in by_key.items():
+            rows.append({
+                '연월': ym,
+                '사업부': ADJUSTMENT_BUSINESS_UNIT,
+                '연결계정과목': link,
+                '구성': label,
+                '금액': amount,
+            })
     if not rows:
         return fin_analysis_df
 
@@ -821,6 +965,18 @@ def join_with_masters(df, cost_center_master, account_master, account_mapping=No
             print(f"     미매칭 G/L 계정: {', '.join(map(str, unique_gl))}")
         df['연결계정과목'] = df['연결계정과목'].fillna(FINANCIAL_EXCLUDED)
 
+    # 4. 거래처(BP) 조인 — 장부 '상계 계정' = BP 코드
+    bp = _load_bp_master()
+    if bp is not None and '상계 계정' in df.columns:
+        df['_상계'] = df['상계 계정'].fillna('').astype(str).str.strip()
+        df = df.merge(bp, left_on='_상계', right_on='_bp코드', how='left')
+        df['_bp명'] = df['_bp명'].fillna('').astype(str)
+        df['_bp구분'] = df['_bp구분'].fillna('').astype(str)
+        df = df.drop(columns=['_상계', '_bp코드'], errors='ignore')
+    else:
+        df['_bp명'] = ''
+        df['_bp구분'] = ''
+
     print(f"  - 조인 완료")
 
     return df
@@ -1096,6 +1252,15 @@ def aggregate_data(df):
 
 ADJUSTMENT_KIND_IFRS = '조정(IFRS)'
 ADJUSTMENT_KIND_SUBSIDY = '조정(보조금)'
+# 보조금을 수수료 차감으로 잡은 장부 계정(잡이익_보조금)과 그것을 되돌리는 조정분개는
+# 같은 항목이므로 한 라벨로 묶는다.
+SUBSIDY_LABEL = '정부보조금'
+
+
+def _adjustment_label(pkg_label, kind):
+    if kind == ADJUSTMENT_KIND_SUBSIDY and pkg_label == '지급수수료':
+        return SUBSIDY_LABEL
+    return f'{pkg_label} {kind}'
 
 # 보조금 배분 분개와 같은 묶음 번호에 들어가 있지만 실제로는 별개 분개인 계정.
 # (엑셀에서 묶음을 안 나눴을 뿐 — 유형자산 처분손실·잡손익 재분류)
@@ -1179,12 +1344,12 @@ def load_adjustment_entries(pkg_map):
             # 그룹 설명 행: pkg code 자리가 비었거나 'OK'
             if name_str and not code_str.isdigit():
                 kind = _adjustment_kind(name_str)
-                for link, amount, pkg in buffer:
+                for link, amount, pkg, pkg_label in buffer:
                     row_kind = kind
                     if kind == ADJUSTMENT_KIND_SUBSIDY and pkg in SUBSIDY_EXCLUDED_PKG:
                         row_kind = ADJUSTMENT_KIND_IFRS
-                    by_kind.setdefault(row_kind, {})
-                    by_kind[row_kind][link] = by_kind[row_kind].get(link, 0) + amount
+                    key = (link, _adjustment_label(pkg_label, row_kind))
+                    by_kind[key] = by_kind.get(key, 0) + amount
                 buffer = []
                 continue
 
@@ -1195,17 +1360,18 @@ def load_adjustment_entries(pkg_map):
                 skipped += 1
                 continue
             link = hit[0]
+            pkg_label = (hit[1] or '').strip() if len(hit) > 1 else ''
+            if not pkg_label or pkg_label == '(미지정)':
+                pkg_label = name_str or code_str
             amount = debit - credit
             totals[link] = totals.get(link, 0) + amount
-            buffer.append((link, amount, code_str))
+            buffer.append((link, amount, code_str, pkg_label))
             used += 1
 
         # 설명 행 없이 끝난 잔여 행은 IFRS(나머지)로
-        for link, amount, _pkg in buffer:
-            by_kind.setdefault(ADJUSTMENT_KIND_IFRS, {})
-            by_kind[ADJUSTMENT_KIND_IFRS][link] = (
-                by_kind[ADJUSTMENT_KIND_IFRS].get(link, 0) + amount
-            )
+        for link, amount, _pkg, pkg_label in buffer:
+            key = (link, _adjustment_label(pkg_label, ADJUSTMENT_KIND_IFRS))
+            by_kind[key] = by_kind.get(key, 0) + amount
 
         cumulative[year_month] = totals
         cumulative_by_kind[year_month] = by_kind
@@ -1233,27 +1399,24 @@ def load_adjustment_entries(pkg_map):
                 monthly[ym] = delta
             prev = curr
 
-    # 유형별도 같은 방식으로 누적 → 증분
+    # 계정·유형별도 같은 방식으로 누적 → 증분 (키 = (연결계정과목, '계정명 조정(유형)'))
     monthly_by_kind = {}
     for year, months in by_year.items():
         prev = {}
         for ym in sorted(months):
             curr = cumulative_by_kind.get(ym, {})
             delta = {}
-            for kind in set(curr) | set(prev):
-                c = curr.get(kind, {})
-                p = prev.get(kind, {})
-                for link in set(c) | set(p):
-                    v = c.get(link, 0) - p.get(link, 0)
-                    if v:
-                        delta.setdefault(kind, {})[link] = v
+            for key in set(curr) | set(prev):
+                v = curr.get(key, 0) - prev.get(key, 0)
+                if v:
+                    delta[key] = v
             if delta:
                 monthly_by_kind[ym] = delta
             prev = curr
 
     load_adjustment_entries.by_kind = monthly_by_kind
-    kinds = sorted({k for v in monthly_by_kind.values() for k in v})
-    print(f"  - 조정 유형: {kinds}")
+    labels = sorted({label for v in monthly_by_kind.values() for _, label in v})
+    print(f"  - 조정 구성 {len(labels)}종: {labels[:6]}{' …' if len(labels) > 6 else ''}")
     return monthly
 
 

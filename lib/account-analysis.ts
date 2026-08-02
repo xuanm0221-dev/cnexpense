@@ -91,8 +91,6 @@ const SUB_LABEL_PREFIXES = [
   '지급임차료_',
   '관리회계_',
   '수주회_',
-  'TP수수료_',
-  'TP매출연동_',
   '지급수수료_',
 ];
 
@@ -134,7 +132,6 @@ export const BRAND_SPLIT_ACCOUNTS = new Set([
   '광고비',
   '광고선전비',
   '수주회',
-  '출장비',
 ]);
 
 /** 인원 증감을 같이 보여줄 계정 */
@@ -245,6 +242,22 @@ function safeIndex(curr: number, prev: number): number | null {
   return Math.abs(value) > 999 ? null : value;
 }
 
+/** 표시 라벨이 같은 항목은 한 줄로 합친다 (계정명 접두어를 떼면서 겹칠 수 있음) */
+function mergeSameLabel(items: AnalysisDelta[]): AnalysisDelta[] {
+  const byLabel = new Map<string, AnalysisDelta>();
+  for (const item of items) {
+    const hit = byLabel.get(item.label);
+    if (hit) {
+      hit.delta += item.delta;
+      hit.curr += item.curr;
+      hit.index = null; // 합친 뒤에는 개별 지수가 의미 없다
+    } else {
+      byLabel.set(item.label, { ...item });
+    }
+  }
+  return [...byLabel.values()].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+}
+
 function mergeMonthly(maps: MonthlyAmounts[]): MonthlyAmounts {
   const out: MonthlyAmounts = {};
   for (const m of maps) {
@@ -322,7 +335,7 @@ export function buildAccountAnalysis(input: BuildAnalysisInput): AccountAnalysis
           }
         : null;
 
-    const buckets: AnalysisDelta[] = Object.entries(bucketMonthly)
+    const bucketRows = Object.entries(bucketMonthly)
       .map(([label, monthly]) => {
         const c = periodCny(fromMonthly(monthly), period);
         const p = periodCny(fromMonthly(monthly), prevPeriod);
@@ -333,8 +346,8 @@ export function buildAccountAnalysis(input: BuildAnalysisInput): AccountAnalysis
           index: safeIndex(c, p),
         };
       })
-      .filter(b => b.curr !== 0 || b.delta !== 0)
-      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+      .filter(b => b.curr !== 0 || b.delta !== 0);
+    const buckets: AnalysisDelta[] = mergeSameLabel(bucketRows);
 
     const needBrand = isCorporate && BRAND_SPLIT_ACCOUNTS.has(category);
     const brands: AnalysisDelta[] = needBrand
