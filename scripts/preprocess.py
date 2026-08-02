@@ -50,13 +50,128 @@ ADJUSTMENT_PKG_LABEL = "조정"
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# 계정별 분석 — 적요(텍스트) 기반 구성 버킷
+# 하위 레벨(구성) — 1차는 G/L 계정, 필요한 곳만 적요로 보정
 #
-# 계정 2레벨(중분류/GL)만으로는 "무엇 때문에 늘었나"가 안 보여서, 기표 적요를
-# 키워드로 묶어 구성을 만든다. 같은 대상을 여러 표기로 적으므로(抖音=Douyin=틱톡)
-# 표기 변형을 한 버킷으로 모은다. 위에서부터 먼저 맞는 규칙을 쓴다.
-# 매칭 대상: 적요 + G/L 계정 설명 + 코스트센터명
+# (a) LEGACY_GL_REMAP — 과거에 한 계정으로 뭉쳐 있던 것을 적요로 **현행 계정 체계**에 매핑.
+#     예: 25년 광고비의 65%가 '광고선전비_MKT광고' 한 계정. 26년은 의류/ACC/브랜딩/
+#     캠페인/리테일링으로 신설되어 그대로 두면 전년비가 전부 깨진다.
+#     품목 키워드가 있으면 품목 계정 우선 (26년 실제 계정 부여와 동일: SHOES CAMPAIGN → ACC).
+#     규칙에 안 걸린 잔액은 '(구)<계정> 미분류'로 남겨 추정 범위를 눈으로 확인할 수 있게 한다.
+#
+# (b) TEXT_SPLIT — 계정 하나에 성격이 섞여 있어 적요로 더 쪼개야 하는 것.
+#     예: 급여 '인건비'는 기본급·성과급·Red Pack이 한 계정, 수주회는 계정이 1개뿐.
+#
+# 매칭 대상: 적요 + G/L 계정 설명 + 코스트센터명. 위에서부터 먼저 맞는 규칙을 쓴다.
 # ────────────────────────────────────────────────────────────────────────────
+LEGACY_GL_REMAP = {
+    # 광고비는 적요에 프로젝트 코드가 남아 있고, 번호대가 계정을 결정한다.
+    #   A/ML(성인) 1xx=브랜딩 · 2xx=상품(의류/ACC) · 3xx=리테일링
+    # 품목 키워드가 있으면 품목 계정이 우선 ('SHOES CAMPAIGN' → ACC, 26년 실제 부여와 동일).
+    ('광고비', '광고선전비_MKT광고'): [
+        ('마케팅 홍보비-ACC', r'SHOES|Shoes|shoes|Shose|SHOSE|\bCAP\b|\bCap\b|BEANI|Beani|신발|모자'),
+        ('마케팅홍보비_APP', r'\bDJ\b|\bWJ\b|T-?[Ss]hirt|TSHIRT|bottom|BOTTOM|Vintage|Coopers|LINER|Hot Summer|KCKP|APPAREL|의류'),
+        ('마케팅 홍보비-브랜딩', r'\b(?:A|ML|MLB)\d{2}-1\d{2}\b'),
+        ('마케팅 홍보비-리테일링', r'\b[A-Z]{1,3}\d{2}-3\d{2}\b|OOH|Mall Ads|In ?[Ss]tore|in ?store|[Ss]tore [Oo]pening|GWP|门店|直营'),
+        ('마케팅홍보비_APP', r'\b(?:A|ML|MLB)\d{2}-2\d{2}\b'),
+        ('마케팅 홍보비-기타', r'KOL|明星|粉丝|客服'),
+        ('마케팅 홍보비-브랜딩', r'代言|艺人|\bBE\b|ENDO|Endorser|Ambassador|Influenc|PR Agency|Media Agency|Social Agency|\bSEM\b|Shooting|宣传'),
+        ('마케팅 홍보비-캠페인', r'CAMPAIGN|CAMPAIN|Campaign|campaign|Comms|MEDIA FEE|Starry|小红书|达人|Set-?up|\bQ[1-4]\b|WINTER|SUMMER|SPRING|NEW YEAR'),
+        ('마케팅 홍보비-캠페인', r'KIDS|Kids|DISCOVERY|Discovery|\bDX\b|\bMK\b'),
+    ],
+    ('지급수수료', '지급수수료_지급용역료'): [
+        ('지급수수료_연간유지보수서비스비', r'SAP|license|许可|阿里云|Adobe|运维|维护|云资源|开店服务费'),
+        ('지급수수료_부가가치 서비스비', r'QAQC|VAS'),
+        ('지급수수료_감사서비스비', r'审计|年审|税务|BAPA|Fin-?Tax'),
+        ('지급수수료_데이터 운영 서비스비', r'DBEI|辰月|数据|情报通|任拓'),
+        ('지급수수료_AI 관련 서비스비', r'Claude|GPT|\bAI\b|知衣|打标'),
+        ('지급수수료_기타 자문 서비스비', r'搬仓|盘点|销毁|宝尊|全盘|退仓|咨询|顾问'),
+        ('지급수수료_직영매장 서비스비-INT', r'撤柜|拆除|复原|整改|维修|重装'),
+        ('지급수수료_신규개발서비스비', r'开发|OMS|\bOA\b|钉钉|接口|形象|showroom|迁移|装修'),
+        ('지급수수료_온라인매장 서비스비', r'投放|showmax|线上|EC '),
+        ('지급수수료_직영매장 서비스비-기타', r'保洁|清洗|联营|代理商|门店|直营'),
+    ],
+    ('지급수수료', '지급수수료_일반'): [
+        ('지급수수료_은행수수료', r'银联|银行|收款明细|手续费'),
+    ],
+    ('복리비', '복리후생비_복리'): [
+        ('복리후생비_회사 대규모 단합(워크숍) 복지', r'年会|团建|拓展'),
+        ('복리후생비_근속(기념일) 복지', r'周年|纪念|근속'),
+        ('복리후생비_야외활동', r'outing|OUTING|Outing|户外|野外'),
+        ('복리후생비_명절복지', r'端午|中秋|春节|新年|开门红包|生日|节日|38节|圣诞'),
+        ('복리후생비_기타복지', r'工服|福利|유니폼'),
+    ],
+}
+
+TEXT_SPLIT = {
+    ('급여', '인건비'): [
+        ('Red Pack', r'董事长'),
+        ('성과급', r'奖金|年终|성과급'),
+        ('기본급', r'工资|薪酬'),
+    ],
+    ('수주회', '광고비_수주회'): [
+        ('수주회_행사운영(장소·식음)', r'酒店|餐饮|场地|会场|短租'),
+        ('수주회_진열·연출물', r'陈列|道具|物料|装饰|模特|氛围'),
+        ('수주회_유니폼', r'工服|服装'),
+        ('수주회_국제운송', r'DHL|FEDEX|快递|关税'),
+        ('수주회_시스템', r'系统|订货系统|开发'),
+        ('수주회_행사 일괄(계상)', r'TRADESHOW|tradeshow|Tradeshow|订货会|\bTS\b'),
+    ],
+    ('TP수수료', '지급수수료_TP변동수수료'): [
+        ('TP수수료_틱톡(抖音)', r'抖音|Douyin|DOUYIN|틱톡'),
+        ('TP수수료_티몰', r'天猫|TMALL|Tmall|TP运营费|TP佣金'),
+    ],
+    ('TP수수료', '지급수수료_TP매출연동수수료'): [
+        ('TP매출연동_틱톡(抖音)', r'抖音|Douyin|DOUYIN'),
+        ('TP매출연동_티몰', r'天猫|TMALL|Tmall|销售佣金'),
+    ],
+}
+
+_LEGACY_COMPILED = None
+_SPLIT_COMPILED = None
+
+
+def _legacy_rules():
+    global _LEGACY_COMPILED
+    if _LEGACY_COMPILED is None:
+        import re
+        _LEGACY_COMPILED = {
+            k: [(name, re.compile(pat)) for name, pat in rules]
+            for k, rules in LEGACY_GL_REMAP.items()
+        }
+    return _LEGACY_COMPILED
+
+
+def _split_rules():
+    global _SPLIT_COMPILED
+    if _SPLIT_COMPILED is None:
+        import re
+        _SPLIT_COMPILED = {
+            k: [(name, re.compile(pat)) for name, pat in rules]
+            for k, rules in TEXT_SPLIT.items()
+        }
+    return _SPLIT_COMPILED
+
+
+def _resolve_sublevel(category, gl, haystack):
+    """(구성 라벨, 추정여부) — 1차 계정, 필요 시 적요로 재분류/세분"""
+    key = (category, gl)
+
+    legacy = _legacy_rules().get(key)
+    if legacy:
+        for name, rx in legacy:
+            if rx.search(haystack):
+                return name, True
+        return f'(구){gl} 미분류', True
+
+    split = _split_rules().get(key)
+    if split:
+        for name, rx in split:
+            if rx.search(haystack):
+                return name, False
+
+    return gl, False
+
+
 ANALYSIS_BUCKET_RULES = {
     '급여': [
         ('매장 인건비', r'인건비_직영점|직영점|门店|店铺'),
@@ -213,20 +328,35 @@ def aggregate_account_analysis(mgmt_df, financial_df_rows):
         df['_집계비용구분'] = cc_norm
 
     df['_hay'] = _analysis_haystack(df)
-    df['_bucket'] = [
-        _assign_analysis_bucket(c, h) for c, h in zip(df['대분류'], df['_hay'])
+    df['_gl'] = df['G/L 계정 설명'].fillna('').astype(str).str.strip()
+    df.loc[df['_gl'] == '', '_gl'] = '(미지정)'
+
+    resolved = [
+        _resolve_sublevel(c, g, h)
+        for c, g, h in zip(df['대분류'], df['_gl'], df['_hay'])
     ]
+    df['_bucket'] = [r[0] for r in resolved]
+    df['_추정'] = [r[1] for r in resolved]
+
     mgmt = df.groupby(
         ['연월', '사업부', '_집계비용구분', '대분류', '_bucket'], as_index=False
     )['금액(전표 통화)'].sum()
     mgmt.columns = ['연월', '사업부', '비용구분', '대분류', '구성', '금액']
 
-    etc_share = (
-        mgmt.loc[mgmt['구성'] == ANALYSIS_ETC, '금액'].sum() / mgmt['금액'].sum()
-        if mgmt['금액'].sum()
-        else 0
+    # 적요로 현행 계정 체계에 맞춘(=추정) 대분류·월 — 화면에 '추정' 표시용
+    est = df[df['_추정']]
+    estimated = {}
+    for (cat, ym), _ in est.groupby(['대분류', '연월']):
+        estimated.setdefault(cat, []).append(ym)
+    for cat in estimated:
+        estimated[cat] = sorted(estimated[cat])
+
+    unmapped = mgmt[mgmt['구성'].str.startswith('(구)')]['금액'].sum()
+    print(
+        f"  - 관리식 구성 집계: {len(mgmt)}행 "
+        f"(계정 1차 + 적요 보정, 추정 대분류 {list(estimated)}, 미분류 잔액 {unmapped/1e6:.1f}백만)"
     )
-    print(f"  - 관리식 구성 집계: {len(mgmt)}행, 기타 비중 {etc_share:.1%}")
+    aggregate_account_analysis.estimated = estimated
 
     fin = financial_df_rows
     if fin is None or fin.empty:
@@ -237,7 +367,11 @@ def aggregate_account_analysis(mgmt_df, financial_df_rows):
 
 
 def aggregate_financial_analysis(df):
-    """재무식: 연결계정과목 × 관리식 대분류(구성) 월별 집계"""
+    """재무식: 연결계정과목 × 구성(관리식과 동일한 계정 1차 + 적요 보정) 월별 집계.
+
+    연결계정과목만으로는 '인건비'가 한 덩어리라, 사무실 급여·매장 인건비·퇴직급여가
+    안 보인다. 관리식과 같은 하위 규칙을 써서 계정 단위로 펼친다.
+    """
     if df.empty or '연결계정과목' not in df.columns:
         return pd.DataFrame(columns=['연월', '사업부', '연결계정과목', '구성', '금액'])
 
@@ -245,7 +379,13 @@ def aggregate_financial_analysis(df):
     if work.empty:
         return pd.DataFrame(columns=['연월', '사업부', '연결계정과목', '구성', '금액'])
 
-    work['구성'] = work['대분류'].fillna('기타').astype(str)
+    work['_hay'] = _analysis_haystack(work)
+    work['_gl'] = work['G/L 계정 설명'].fillna('').astype(str).str.strip()
+    work.loc[work['_gl'] == '', '_gl'] = '(미지정)'
+    work['구성'] = [
+        _resolve_sublevel(c if isinstance(c, str) else '', g, h)[0]
+        for c, g, h in zip(work['대분류'], work['_gl'], work['_hay'])
+    ]
     grouped = work.groupby(
         ['연월', '사업부', '연결계정과목', '구성'], as_index=False
     )['금액(전표 통화)'].sum()
@@ -254,25 +394,27 @@ def aggregate_financial_analysis(df):
 
 
 def apply_adjustments_analysis(fin_analysis_df, adjustments, allowed_months=None):
-    """재무식 분석에도 IFRS 조정분개를 반영 (구성 = 'IFRS 리스 조정').
+    """재무식 분석에 조정분개를 유형별로 반영 (구성 = '조정(IFRS)' / '조정(보조금)').
 
     카드·표의 재무식 금액은 조정분개를 포함하므로, 분석에서 빼면 금액이 어긋난다.
     """
     if not adjustments:
         return fin_analysis_df
 
+    by_kind = getattr(load_adjustment_entries, 'by_kind', {})
     rows = []
-    for ym, by_link in adjustments.items():
+    for ym, kinds in by_kind.items():
         if allowed_months is not None and ym not in allowed_months:
             continue
-        for link, amount in by_link.items():
-            rows.append({
-                '연월': ym,
-                '사업부': ADJUSTMENT_BUSINESS_UNIT,
-                '연결계정과목': link,
-                '구성': 'IFRS 리스 조정',
-                '금액': amount,
-            })
+        for kind, by_link in kinds.items():
+            for link, amount in by_link.items():
+                rows.append({
+                    '연월': ym,
+                    '사업부': ADJUSTMENT_BUSINESS_UNIT,
+                    '연결계정과목': link,
+                    '구성': kind,
+                    '금액': amount,
+                })
     if not rows:
         return fin_analysis_df
 
@@ -284,12 +426,16 @@ def apply_adjustments_analysis(fin_analysis_df, adjustments, allowed_months=None
     return merged
 
 
-def build_analysis_json(mgmt_rows, fin_rows, months):
-    """계정별 분석 JSON — { 관리식: {사업부: {비용구분: {대분류: {구성: {월: 금액}}}}}, 재무식: {...} }"""
+def build_analysis_json(mgmt_rows, fin_rows, months, estimated=None):
+    """계정별 분석 JSON — { 관리식: {사업부: {비용구분: {대분류: {구성: {월: 금액}}}}}, 재무식: {...} }
+
+    metadata.추정월: 적요로 현행 계정 체계에 맞춘(=추정) 대분류별 월 목록
+    """
     result = {
         'metadata': {
             'generatedAt': datetime.now().isoformat(),
             'months': months,
+            '추정월': estimated or {},
         },
         '관리식': {},
         '재무식': {},
@@ -332,6 +478,11 @@ def merge_analysis_json(existing, new_data):
 
     for basis, depth in (('관리식', 3), ('재무식', 2)):
         deep_merge(existing.setdefault(basis, {}), new_data.get(basis, {}), depth)
+
+    # 추정월은 대분류별 월 목록 합집합
+    est = existing.setdefault('metadata', {}).setdefault('추정월', {})
+    for cat, ms in (new_data.get('metadata', {}).get('추정월', {}) or {}).items():
+        est[cat] = sorted(set(est.get(cat, [])) | set(ms))
 
     months = sorted(
         set(existing.get('metadata', {}).get('months', []))
@@ -943,6 +1094,31 @@ def aggregate_data(df):
     return grouped
 
 
+ADJUSTMENT_KIND_IFRS = '조정(IFRS)'
+ADJUSTMENT_KIND_SUBSIDY = '조정(보조금)'
+
+# 보조금 배분 분개와 같은 묶음 번호에 들어가 있지만 실제로는 별개 분개인 계정.
+# (엑셀에서 묶음을 안 나눴을 뿐 — 유형자산 처분손실·잡손익 재분류)
+SUBSIDY_EXCLUDED_PKG = {
+    '540500',   # Loss on disposal of P.P.E
+    '542500',   # Miscellaneous losses
+    '531600',   # Miscellaneous income
+}
+
+
+def _adjustment_kind(group_desc):
+    """전표 묶음 설명 → 조정 유형.
+
+    정부보조금(补贴调整)은 지급수수료 차감으로 잡아둔 보조금을 비용 계정에 비율 배분해
+    다시 차감하는 **계정 간 재배분**이라 성격이 완전히 다르다. 그래서 따로 뗀다.
+    装修补贴/返利补贴 는 정부보조금이 아니라 대리상지원금이므로 여기 넣지 않는다.
+    """
+    desc = group_desc.replace(' ', '')
+    if '补贴调整' in desc and '装修' not in desc and '返利' not in desc:
+        return ADJUSTMENT_KIND_SUBSIDY
+    return ADJUSTMENT_KIND_IFRS
+
+
 def load_adjustment_entries(pkg_map):
     """
     IFRS 조정분개 로드 (재무식 전용).
@@ -970,6 +1146,8 @@ def load_adjustment_entries(pkg_map):
 
     # 누적 금액: {연월: {연결계정과목: 누적금액}}
     cumulative = {}
+    # 조정 유형별 누적: {연월: {유형: {연결계정과목: 누적금액}}}
+    cumulative_by_kind = {}
     for file_path, year_month in sorted(files, key=lambda x: x[1]):
         try:
             import openpyxl
@@ -980,28 +1158,57 @@ def load_adjustment_entries(pkg_map):
             continue
 
         totals = {}
+        by_kind = {}
         used = skipped = 0
+        # 전표 묶음은 데이터 행들 뒤에 설명 행(D열 한자)이 붙는 구조 →
+        # 설명을 만날 때까지 버퍼에 쌓았다가 한꺼번에 유형을 부여한다.
+        buffer = []
         for row in range(1, ws.max_row + 1):
             code = ws.cell(row, 3).value          # C: pkg code
+            name = ws.cell(row, 4).value          # D: 계정명 또는 그룹 설명
             debit = ws.cell(row, 7).value         # G: PL 차변
             credit = ws.cell(row, 8).value        # H: PL 대변
             debit = debit if isinstance(debit, (int, float)) else 0
             credit = credit if isinstance(credit, (int, float)) else 0
-            if debit == 0 and credit == 0:
-                continue
             if isinstance(code, (int, float)):
                 code_str = str(int(code))
             else:
                 code_str = str(code or '').strip()
+            name_str = str(name or '').strip()
+
+            # 그룹 설명 행: pkg code 자리가 비었거나 'OK'
+            if name_str and not code_str.isdigit():
+                kind = _adjustment_kind(name_str)
+                for link, amount, pkg in buffer:
+                    row_kind = kind
+                    if kind == ADJUSTMENT_KIND_SUBSIDY and pkg in SUBSIDY_EXCLUDED_PKG:
+                        row_kind = ADJUSTMENT_KIND_IFRS
+                    by_kind.setdefault(row_kind, {})
+                    by_kind[row_kind][link] = by_kind[row_kind].get(link, 0) + amount
+                buffer = []
+                continue
+
+            if debit == 0 and credit == 0:
+                continue
             hit = pkg_map.get(code_str)
             if not hit:
                 skipped += 1
                 continue
             link = hit[0]
-            totals[link] = totals.get(link, 0) + (debit - credit)
+            amount = debit - credit
+            totals[link] = totals.get(link, 0) + amount
+            buffer.append((link, amount, code_str))
             used += 1
 
+        # 설명 행 없이 끝난 잔여 행은 IFRS(나머지)로
+        for link, amount, _pkg in buffer:
+            by_kind.setdefault(ADJUSTMENT_KIND_IFRS, {})
+            by_kind[ADJUSTMENT_KIND_IFRS][link] = (
+                by_kind[ADJUSTMENT_KIND_IFRS].get(link, 0) + amount
+            )
+
         cumulative[year_month] = totals
+        cumulative_by_kind[year_month] = by_kind
         print(
             f"  - 조정분개 {os.path.basename(file_path)} → {year_month}: "
             f"{used}행 반영 / {skipped}행 제외(pkg code 미매핑), 합계 {sum(totals.values()):,.0f} 위안"
@@ -1026,6 +1233,27 @@ def load_adjustment_entries(pkg_map):
                 monthly[ym] = delta
             prev = curr
 
+    # 유형별도 같은 방식으로 누적 → 증분
+    monthly_by_kind = {}
+    for year, months in by_year.items():
+        prev = {}
+        for ym in sorted(months):
+            curr = cumulative_by_kind.get(ym, {})
+            delta = {}
+            for kind in set(curr) | set(prev):
+                c = curr.get(kind, {})
+                p = prev.get(kind, {})
+                for link in set(c) | set(p):
+                    v = c.get(link, 0) - p.get(link, 0)
+                    if v:
+                        delta.setdefault(kind, {})[link] = v
+            if delta:
+                monthly_by_kind[ym] = delta
+            prev = curr
+
+    load_adjustment_entries.by_kind = monthly_by_kind
+    kinds = sorted({k for v in monthly_by_kind.values() for k in v})
+    print(f"  - 조정 유형: {kinds}")
     return monthly
 
 
@@ -1882,7 +2110,12 @@ def main():
             analysis_fin = apply_adjustments_analysis(
                 aggregate_financial_analysis(cost_df), adjustments, allowed
             )
-            analysis_json = build_analysis_json(analysis_mgmt, analysis_fin, months)
+            analysis_json = build_analysis_json(
+                analysis_mgmt,
+                analysis_fin,
+                months,
+                getattr(aggregate_account_analysis, 'estimated', {}),
+            )
             if not is_full and ANALYSIS_OUTPUT_FILE.exists():
                 try:
                     with open(ANALYSIS_OUTPUT_FILE, 'r', encoding='utf-8') as f:

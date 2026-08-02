@@ -14,6 +14,7 @@ import CorporateSalarySubKpiStrip from '@/components/CorporateSalarySubKpiStrip'
 import AccountAnalysisPanel from '@/components/AccountAnalysisPanel';
 import {
   buildAccountAnalysis,
+  buildSubLevels,
   type AccountAnalysisData,
 } from '@/lib/account-analysis';
 import { getSortedFinancialCategories } from '@/lib/calculations';
@@ -417,6 +418,20 @@ export default function HomePage() {
     exchangeRates,
   ]);
 
+  /** 카드·표가 함께 쓰는 하위 구성 (계정 1차 + 적요 보정) */
+  const analysisUnits = useMemo(
+    () => (isCorporateUnit ? [...CORPORATE_BUSINESS_UNIT_IDS] : [selectedUnit]),
+    [isCorporateUnit, selectedUnit]
+  );
+  const subLevels = useMemo(
+    () => buildSubLevels(analysisData, costBasis, activeTab, analysisUnits),
+    [analysisData, costBasis, activeTab, analysisUnits]
+  );
+  const estimatedCategories = useMemo(
+    () => new Set(Object.keys(analysisData?.metadata?.추정월 ?? {})),
+    [analysisData]
+  );
+
   /** 계정별 분석 — 카드(대분류 표)와 같은 순서·같은 기준 */
   const analysisRows = useMemo(() => {
     if (!analysisData || !selectedMonth) return [];
@@ -633,6 +648,8 @@ export default function HomePage() {
                 onSalarySubExpandedChange={setSalarySubExpanded}
                 welfareSubExpanded={welfareSubExpanded}
                 onWelfareSubExpandedChange={setWelfareSubExpanded}
+                subLevels={subLevels}
+                estimatedCategories={estimatedCategories}
               />
               </div>
             );
@@ -686,6 +703,8 @@ export default function HomePage() {
                   currency={effectiveCurrency}
                   exchangeRates={exchangeRates}
                   availableMonths={data.metadata.months}
+                  subLevels={subLevels}
+                  estimatedCategories={estimatedCategories}
                 />
                 {chartMonths.length > 0 && (
                   <MonthlyCostTrendChart

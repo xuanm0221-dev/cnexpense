@@ -31,10 +31,10 @@ import {
 import type { ViewMode } from '@/lib/types';
 import {
   categorySortSide,
-  mergeCategoryData,
   selectCategoryData,
   sumCategoryMonthly,
 } from '@/lib/category-selection';
+import { shortSubLabel, sortSubLabels, type SubLevels } from '@/lib/account-analysis';
 import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
 import { currencyUnitLabel, yoyIndex } from '@/utils/formatters';
 
@@ -60,6 +60,10 @@ interface MonthlyAccountMatrixTableProps {
   exchangeRates: ExchangeRateData | null;
   /** 비용 데이터가 있는 월 목록 — 빈 열을 만들지 않기 위해 교집합만 표시 */
   availableMonths: string[];
+  /** 하위 구성 (계정 1차 + 적요 보정) — 카드와 같은 소스 */
+  subLevels?: SubLevels;
+  /** 전년이 적요 추정으로 채워진 대분류 */
+  estimatedCategories?: Set<string>;
 }
 
 /** 표시 단위(천위안/백만원)로 줄인 정수 */
@@ -97,6 +101,8 @@ export default function MonthlyAccountMatrixTable({
   currency,
   exchangeRates,
   availableMonths,
+  subLevels,
+  estimatedCategories,
 }: MonthlyAccountMatrixTableProps) {
   const isFinancial = costBasis === '재무식';
   const year = selectedMonth.split('-')[0] ?? '';
@@ -158,49 +164,14 @@ export default function MonthlyAccountMatrixTable({
     });
   }, []);
 
-  /**
-   * 하위 계정 — 좌측 카드와 같은 소스.
-   * 관리식: 급여=급여 중분류, 복리비=복리 중분류, 그 외=G/L 계정 설명 / 재무식: pkg 계정과목(+조정)
-   */
+  /** 하위 구성 — 카드와 같은 소스 (계정 1차 + 적요 보정) */
   const subAccountsOf = useCallback(
-    (category: string): Record<string, MonthlyAmounts> | undefined => {
-      if (!costs) return undefined;
-      const bySide = (
-        side: { 직접비?: Record<string, MonthlyAmounts>; 영업비?: Record<string, MonthlyAmounts> }
-      ) => {
-        if (activeTab === '직접비') return side.직접비;
-        if (activeTab === '영업비') return side.영업비;
-        return mergeCategoryData(side.직접비 ?? {}, side.영업비 ?? {});
-      };
-
-      if (isFinancial) return costs.재무식PKG?.[category];
-      if (category === '급여' && costs.급여중분류) return bySide(costs.급여중분류);
-      if (category === '복리비' && costs.복리중분류) {
-        return bySide({
-          직접비: costs.복리중분류.직접비?.중분류,
-          영업비: costs.복리중분류.영업비?.중분류,
-        });
-      }
-      const gl = costs.대분류별GL설명;
-      if (!gl) return undefined;
-      return bySide({
-        직접비: gl.직접비?.[category],
-        영업비: gl.영업비?.[category],
-      });
-    },
-    [costs, isFinancial, activeTab]
+    (category: string) => subLevels?.[category],
+    [subLevels]
   );
 
-  /** 표시 기간 금액 절대값 큰 순 */
   const sortSubKeys = useCallback(
-    (subMap: Record<string, MonthlyAmounts>) =>
-      Object.keys(subMap)
-        .filter(k => months.some(m => (subMap[k]?.[m] ?? 0) !== 0))
-        .sort((a, b) => {
-          const sum = (key: string) =>
-            months.reduce((s, m) => s + Math.abs(subMap[key]?.[m] ?? 0), 0);
-          return sum(b) - sum(a);
-        }),
+    (subMap: Record<string, MonthlyAmounts>) => sortSubLabels(subMap, months),
     [months]
   );
 
@@ -224,7 +195,7 @@ export default function MonthlyAccountMatrixTable({
     [currency, exchangeRates]
   );
 
-  /** 누계 셀 — 카드·KPI와 동일 규칙(KRW는 기간평균 환율) */
+  /** 분기·누계 셀 — 카드·KPI와 동일 규칙(KRW는 기간평균 환율) */
   const periodCell = useCallback(
     (monthly: MonthlyAmounts | undefined, period: Period): CellMetrics => {
       const accessor = fromMonthly(monthly);
@@ -336,12 +307,13 @@ export default function MonthlyAccountMatrixTable({
                       expandable={subKeys.length > 0}
                       expanded={isOpen}
                       onToggle={() => toggle(category)}
+                      estimated={estimatedCategories?.has(category)}
                     />
                     {isOpen &&
                       subKeys.map(sub => (
                         <MatrixRow
                           key={`${category}-${sub}`}
-                          label={sub}
+                          label={shortSubLabel(sub)}
                           monthly={subMap![sub]}
                           months={months}
                           monthCell={monthCell}
@@ -418,6 +390,7 @@ function MatrixRow({
   expandable = false,
   expanded = false,
   onToggle,
+  estimated = false,
 }: {
   label: string;
   monthly: MonthlyAmounts | undefined;
@@ -431,6 +404,8 @@ function MatrixRow({
   expandable?: boolean;
   expanded?: boolean;
   onToggle?: () => void;
+  /** 전년이 적요 추정으로 채워진 계정 */
+  estimated?: boolean;
 }) {
   // 색은 최소로 — 합계 행은 굵은 글씨와 굵은 밑줄, 하위 계정은 들여쓰기로만 구분한다
   const rowClass = isTotal
@@ -457,6 +432,14 @@ function MatrixRow({
               {expanded ? '∨' : '›'}
             </span>
             <span>{label}</span>
+            {estimated && (
+              <span
+                className="text-[9px] font-semibold text-amber-700 bg-amber-100/80 px-1 py-px rounded"
+                title="전년 금액은 계정이 뭉쳐 있어 적요로 현행 계정에 맞춘 추정치입니다"
+              >
+                추정
+              </span>
+            )}
           </button>
         ) : (
           <span className={isSub ? 'pl-[1.35rem] block text-[10.5px]' : 'pl-[1.15rem] block'}>

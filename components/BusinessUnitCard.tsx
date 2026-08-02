@@ -25,6 +25,7 @@ import {
   previousYearPeriod,
   rateForMonth,
 } from '@/lib/period';
+import type { SubLevels } from '@/lib/account-analysis';
 import {
   formatAmount,
   formatDelta,
@@ -62,6 +63,10 @@ interface BusinessUnitCardProps {
   onSalarySubExpandedChange?: (open: boolean) => void;
   welfareSubExpanded?: boolean;
   onWelfareSubExpandedChange?: (open: boolean) => void;
+  /** 관리식 하위 구성 (대분류 → 구성 → 월별) — 계정 1차 + 적요 보정 */
+  subLevels?: SubLevels;
+  /** 전년이 적요 추정으로 채워진 대분류 */
+  estimatedCategories?: Set<string>;
 }
 
 /** 탭별 인원 기준값 (직접비=매장, 영업비=사무실, 전체=합) */
@@ -102,6 +107,8 @@ export default function BusinessUnitCard({
   onSalarySubExpandedChange,
   welfareSubExpanded,
   onWelfareSubExpandedChange,
+  subLevels,
+  estimatedCategories,
 }: BusinessUnitCardProps) {
   const isFinancial = costBasis === '재무식';
   /** 재무식 = 연결계정과목 기준, 직접/영업 구분 없음 → 탭·인원은 항상 '전체' */
@@ -196,6 +203,11 @@ export default function BusinessUnitCard({
   const salarySubPerPersonDenominator = useMemo(
     () => basisForTab(officeBasis, storeBasis, activeTab) ?? 0,
     [activeTab, officeBasis, storeBasis]
+  );
+  /** 전년 동기간 인원 — 하위 행 '전년 인당' 분모 */
+  const salarySubPerPersonDenominatorPrev = useMemo(
+    () => basisForTab(officeBasisPrev, storeBasisPrev, activeTab) ?? 0,
+    [activeTab, officeBasisPrev, storeBasisPrev]
   );
 
   // 인원수 YoY (전년 동기간 기준 동일 규칙)
@@ -659,9 +671,12 @@ export default function BusinessUnitCard({
           welfareSubExpanded={welfareSubExpanded}
           onWelfareSubExpandedChange={onWelfareSubExpandedChange}
           salaryPerPersonDenominator={salarySubPerPersonDenominator}
+          salaryPerPersonDenominatorPrev={salarySubPerPersonDenominatorPrev}
           costBasis={costBasis}
           financialCosts={financialCosts}
           financialPkg={data.재무식PKG}
+          subLevels={subLevels}
+          estimatedCategories={estimatedCategories}
           currency={currency}
           exchangeRates={exchangeRates}
           period={period}

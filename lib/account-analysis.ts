@@ -22,9 +22,109 @@ import {
 } from './period';
 
 export interface AccountAnalysisData {
-  metadata: { generatedAt: string; months: string[] };
+  metadata: {
+    generatedAt: string;
+    months: string[];
+    /** 적요로 현행 계정 체계에 맞춘(=추정) 대분류별 월 목록 */
+    추정월?: Record<string, string[]>;
+  };
   관리식: Record<string, Record<string, Record<string, Record<string, MonthlyAmounts>>>>;
   재무식: Record<string, Record<string, Record<string, MonthlyAmounts>>>;
+}
+
+/** 계정 → 하위 구성 → 월별 금액. 카드·표·분석 패널이 같은 걸 본다 */
+export type SubLevels = Record<string, Record<string, MonthlyAmounts>>;
+
+/**
+ * 선택 조건(기준·탭·사업부)에 맞는 전 계정의 하위 구성.
+ * 1차는 G/L 계정, 적요 보정이 필요한 곳만 전처리에서 다른 라벨이 붙어 있다.
+ */
+export function buildSubLevels(
+  data: AccountAnalysisData | null,
+  costBasis: CostBasis,
+  activeTab: CostType,
+  units: string[]
+): SubLevels {
+  const out: SubLevels = {};
+  if (!data) return out;
+
+  const add = (category: string, buckets: Record<string, MonthlyAmounts> | undefined) => {
+    if (!buckets) return;
+    const target = out[category] ?? (out[category] = {});
+    for (const [label, monthly] of Object.entries(buckets)) {
+      const dst = target[label] ?? (target[label] = {});
+      for (const [m, v] of Object.entries(monthly)) dst[m] = (dst[m] || 0) + v;
+    }
+  };
+
+  for (const unit of units) {
+    if (costBasis === '재무식') {
+      const byAccount = data.재무식?.[unit];
+      if (byAccount) for (const [account, buckets] of Object.entries(byAccount)) add(account, buckets);
+      continue;
+    }
+    const sides = data.관리식?.[unit];
+    if (!sides) continue;
+    for (const side of ['직접비', '영업비'] as const) {
+      if (activeTab !== '전체' && activeTab !== side) continue;
+      const byCategory = sides[side];
+      if (!byCategory) continue;
+      for (const [category, buckets] of Object.entries(byCategory)) add(category, buckets);
+    }
+  }
+
+  return out;
+}
+
+/**
+ * 하위 구성 표시 라벨 — 계정명 앞의 대분류 접두어를 떼어 좁은 카드에서도 한 줄에 들어가게.
+ * (예: '마케팅 홍보비-브랜딩' → '브랜딩', '복리후생비_사회보험' → '사회보험')
+ */
+const SUB_LABEL_PREFIXES = [
+  '마케팅 홍보비-',
+  '마케팅홍보비_',
+  '광고선전비_',
+  '복리후생비_',
+  '여비교통비_',
+  '감가상각비_',
+  '소모품비_',
+  '지급임차료_',
+  '관리회계_',
+  '수주회_',
+  'TP수수료_',
+  'TP매출연동_',
+  '지급수수료_',
+];
+
+export function shortSubLabel(label: string): string {
+  for (const prefix of SUB_LABEL_PREFIXES) {
+    if (label.startsWith(prefix)) {
+      const rest = label.slice(prefix.length);
+      if (rest) return rest;
+    }
+  }
+  return label;
+}
+
+/** 표시 기간에 금액이 있는 구성만, 절대값 큰 순 */
+export function sortSubLabels(
+  buckets: Record<string, MonthlyAmounts> | undefined,
+  months: string[]
+): string[] {
+  if (!buckets) return [];
+  const weight = (label: string) =>
+    months.reduce((s, m) => s + Math.abs(buckets[label]?.[m] ?? 0), 0);
+  return Object.keys(buckets)
+    .filter(label => weight(label) > 0)
+    .sort((a, b) => weight(b) - weight(a));
+}
+
+/** 전년 금액이 적요 추정으로 채워진 계정인지 */
+export function isEstimatedCategory(
+  data: AccountAnalysisData | null,
+  category: string
+): boolean {
+  return Boolean(data?.metadata?.추정월?.[category]?.length);
 }
 
 /** 브랜드(코스트센터) 구분 설명이 필요한 계정 — 나머지는 법인 합계만 본다 */
@@ -227,7 +327,7 @@ export function buildAccountAnalysis(input: BuildAnalysisInput): AccountAnalysis
         const c = periodCny(fromMonthly(monthly), period);
         const p = periodCny(fromMonthly(monthly), prevPeriod);
         return {
-          label,
+          label: shortSubLabel(label),
           delta: toDisplay(c - p),
           curr: isKrw ? c * (currRate ?? 0) : c,
           index: safeIndex(c, p),

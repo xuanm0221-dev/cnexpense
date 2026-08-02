@@ -31,6 +31,7 @@ import {
 } from '@/utils/formatters';
 import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
 import { fromMonthly, periodCny, periodValue, type Period } from '@/lib/period';
+import { shortSubLabel, sortSubLabels, type SubLevels } from '@/lib/account-analysis';
 
 const SALARY_SUB_LABELS = ['기본급', '성과급', 'Red Pack', '외주/PT', '퇴직급여', '미정'] as const;
 
@@ -150,6 +151,8 @@ interface CostTypeTabsProps {
   onSalarySubExpandedChange?: (open: boolean) => void;
   /** 급여·복리 중분류 '인당' 분모 (당월 스냅샷 또는 YTD 월별 인원 합) */
   salaryPerPersonDenominator?: number;
+  /** 전년 동기간 인원 — 하위 행 '전년 인당' 분모 */
+  salaryPerPersonDenominatorPrev?: number;
   welfareSub?: {
     직접비: WelfareBreakdownSide;
     영업비: WelfareBreakdownSide;
@@ -162,6 +165,13 @@ interface CostTypeTabsProps {
   financialCosts?: CategoryData;
   /** 재무식 하위 분해 (연결계정과목 → pkg 계정과목 / '조정') */
   financialPkg?: GlBreakdownByCategory;
+  /**
+   * 관리식 하위 구성 (대분류 → 구성 → 월별). 1차는 G/L 계정,
+   * 적요 보정이 필요한 곳만 전처리에서 다른 라벨이 붙는다.
+   */
+  subLevels?: SubLevels;
+  /** 전년이 적요 추정으로 채워진 대분류 — '추정' 표시용 */
+  estimatedCategories?: Set<string>;
   /** 표시 통화 및 환율 (KRW는 재무식에서만) */
   currency?: Currency;
   exchangeRates?: ExchangeRateData | null;
@@ -182,12 +192,15 @@ export default function CostTypeTabs({
   salarySubExpanded: externalSalarySubExpanded,
   onSalarySubExpandedChange,
   salaryPerPersonDenominator = 0,
+  salaryPerPersonDenominatorPrev = 0,
   welfareSub,
   welfareSubExpanded: externalWelfareSubExpanded,
   onWelfareSubExpandedChange,
   costBasis = '관리식',
   financialCosts,
   financialPkg,
+  subLevels,
+  estimatedCategories,
   currency = 'CNY',
   exchangeRates = null,
   period,
@@ -197,6 +210,16 @@ export default function CostTypeTabs({
   /** 재무식은 전년 금액 컬럼을 항상 표시 */
   const withPrevColumn = isFinancial;
   const rowGridClass = rowGridClassFor(withPrevColumn);
+  /** 하위 구성 정렬·표시 판단에 쓸 월 (조회 기간 기준) */
+  const subMonths = useMemo(() => {
+    if (period.months.length > 0) return period.months;
+    if (viewMode === '누적(YTD)') {
+      const [y, mm] = (selectedMonth || '').split('-');
+      const end = parseInt(mm || '0', 10);
+      return Array.from({ length: end }, (_, i) => `${y}-${String(i + 1).padStart(2, '0')}`);
+    }
+    return [period.endMonth];
+  }, [period, viewMode, selectedMonth]);
   const hasDirectCosts = Object.keys(directCosts).length > 0;
   const hasOperatingCosts = Object.keys(operatingCosts).length > 0;
 
@@ -434,23 +457,14 @@ export default function CostTypeTabs({
             const yoyIdx = yoyIndex(amount, prevAmount);
             const yoyDelta = prevAmount === 0 ? null : formatDelta(amount, prevAmount, currency);
 
-            // 급여·복리 중분류 펼침은 관리식 대분류 기준 — 재무식에서는 제공하지 않음
-            const showSalaryToggle =
-              !isFinancial &&
-              category === '급여' &&
-              salaryBuckets &&
-              visibleSalarySubLabels.length > 0;
+            // 계정(G/L) 1차 + 적요 보정 하위 구성 — 관리식·재무식 공통
+            const subLabels = sortSubLabels(subLevels?.[category], subMonths);
+            const showSubToggle = subLabels.length > 1;
+            const subOpen = financialExpanded.has(category);
+            /** 인당 금액을 같이 보여줄 계정 (인건비 계열) */
+            const perPersonCategory = category === '급여' || category === '복리비';
+            const isEstimated = estimatedCategories?.has(category) ?? false;
 
-            const showWelfareToggle =
-              !isFinancial &&
-              category === '복리비' &&
-              welfareSideResolved &&
-              visibleWelfareL2.length > 0;
-
-            // 재무식: GL(장부) / 조정(IFRS 조정분개) 분해
-            const splitRows = isFinancial ? financialSplitOf(category) : [];
-            const showFinancialToggle = splitRows.length > 1;
-            const financialOpen = financialExpanded.has(category);
 
             return (
               <div key={category}>
@@ -458,38 +472,24 @@ export default function CostTypeTabs({
                   <div className="flex items-start justify-between gap-2 min-w-0 font-medium text-gray-800">
                     <span className="min-w-0 flex-1 leading-snug md:whitespace-nowrap">
                       {category}
+                      {isEstimated && (
+                        <span
+                          className="ml-1 align-middle text-[9px] font-semibold text-amber-700 bg-amber-100/80 px-1 py-px rounded"
+                          title="전년 금액은 계정이 뭉쳐 있어 적요로 현행 계정에 맞춘 추정치입니다"
+                        >
+                          추정
+                        </span>
+                      )}
                     </span>
-                    {showSalaryToggle && (
-                      <button
-                        type="button"
-                        onClick={toggleSalaryExpanded}
-                        className="shrink-0 inline-flex items-center justify-center p-0.5 min-w-[1.25rem] text-sm font-medium leading-none text-gray-500 hover:text-gray-900"
-                        aria-expanded={salaryExpanded}
-                        aria-label={salaryExpanded ? '급여 중분류 접기' : '급여 중분류 펼치기'}
-                      >
-                        {salaryExpanded ? '−' : '+'}
-                      </button>
-                    )}
-                    {showWelfareToggle && (
-                      <button
-                        type="button"
-                        onClick={toggleWelfareExpanded}
-                        className="shrink-0 inline-flex items-center justify-center p-0.5 min-w-[1.25rem] text-sm font-medium leading-none text-gray-500 hover:text-gray-900"
-                        aria-expanded={welfareExpanded}
-                        aria-label={welfareExpanded ? '복리비 중분류 접기' : '복리비 중분류 펼치기'}
-                      >
-                        {welfareExpanded ? '−' : '+'}
-                      </button>
-                    )}
-                    {showFinancialToggle && (
+                    {showSubToggle && (
                       <button
                         type="button"
                         onClick={() => toggleFinancialExpanded(category)}
                         className="shrink-0 inline-flex items-center justify-center p-0.5 min-w-[1.25rem] text-sm font-medium leading-none text-gray-500 hover:text-gray-900"
-                        aria-expanded={financialOpen}
-                        aria-label={financialOpen ? `${category} GL·조정 접기` : `${category} GL·조정 펼치기`}
+                        aria-expanded={subOpen}
+                        aria-label={subOpen ? `${category} 하위 계정 접기` : `${category} 하위 계정 펼치기`}
                       >
-                        {financialOpen ? '−' : '+'}
+                        {subOpen ? '−' : '+'}
                       </button>
                     )}
                   </div>
@@ -534,27 +534,52 @@ export default function CostTypeTabs({
                     </div>
                   </div>
                 </div>
-                {showFinancialToggle && financialOpen && (
+                {showSubToggle && subOpen && (
                   <div className="ml-2 sm:ml-4 md:ml-5 mt-1 space-y-1 pl-2 sm:pl-3 mb-1.5 sm:mb-2">
-                    {splitRows.map(({ label, monthly }) => {
-                      const acc = fromMonthly(monthly);
+                    {subLabels.map((label) => {
+                      const subMonthly = subLevels?.[category]?.[label] ?? {};
+                      const acc = fromMonthly(subMonthly);
                       const cur = periodValue(acc, period, currency, exchangeRates);
                       const prv = periodValue(acc, prevPeriod, currency, exchangeRates);
                       const idx = yoyIndex(cur, prv);
                       const delta = prv === 0 ? null : formatDelta(cur, prv, currency);
+                      const perPerson =
+                        perPersonCategory && salaryPerPersonDenominator > 0 && cur !== null
+                          ? cur / salaryPerPersonDenominator
+                          : null;
+                      const perPersonPrev =
+                        perPersonCategory && salaryPerPersonDenominatorPrev > 0 && prv !== null
+                          ? prv / salaryPerPersonDenominatorPrev
+                          : null;
                       return (
-                        <div key={label} className={financialSubRowClass}>
-                          <div className="text-gray-500 pl-0 md:pl-1 min-w-0 leading-snug md:whitespace-nowrap">
-                            ㄴ {label}
+                        <div key={label} className={rowGridClass}>
+                          <div className="break-words text-gray-600 pl-0 md:pl-1 min-w-0 leading-snug text-[10px] sm:text-[11px] md:text-xs">
+                            ㄴ {shortSubLabel(label)}
                           </div>
                           <div className={metricCellClass}>
                             <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">금액</span>
-                            <span className="text-right text-gray-800">{formatAmount(cur, currency)}</span>
+                            <span className="text-right text-gray-800">
+                              {formatAmount(cur, currency)}
+                              {/* 인당 금액 — 50위안 미만은 '0K/인'으로만 찍혀 의미가 없어 생략 */}
+                              {perPerson !== null && Math.abs(perPerson) >= 50 && (
+                                <span className="block text-[10px] text-gray-400 whitespace-nowrap leading-tight">
+                                  {formatPerPersonThousandCny(perPerson)}
+                                  {perPersonPrev !== null && Math.abs(perPersonPrev) >= 50 && (
+                                    <span className="text-gray-300">
+                                      {' · 전년 '}
+                                      {formatPerPersonThousandCny(perPersonPrev).replace('/인', '')}
+                                    </span>
+                                  )}
+                                </span>
+                              )}
+                            </span>
                           </div>
-                          <div className={metricCellClass}>
-                            <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">전년금액</span>
-                            <span className="text-right text-gray-500">{formatAmount(prv, currency)}</span>
-                          </div>
+                          {withPrevColumn && (
+                            <div className={metricCellClass}>
+                              <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">전년금액</span>
+                              <span className="text-right text-gray-500">{formatAmount(prv, currency)}</span>
+                            </div>
+                          )}
                           <div className={metricCellClass}>
                             <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">YOY금액</span>
                             <span className="text-right text-gray-700 tabular-nums">
@@ -571,158 +596,6 @@ export default function CostTypeTabs({
                               )}
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {showSalaryToggle && salaryExpanded && (
-                  <div className="ml-2 sm:ml-4 md:ml-5 mt-1 space-y-1 pl-2 sm:pl-3 mb-1.5 sm:mb-2">
-                    {visibleSalarySubLabels.map((label) => {
-                      const subMonthly = salaryBuckets[label]!;
-                      const subAmt = amountForPeriod(subMonthly, selectedMonth, isYTD);
-                      const subPerPerson =
-                        salaryPerPersonDenominator > 0 ? subAmt / salaryPerPersonDenominator : null;
-                      const subYoy = calculateYoY(subMonthly, selectedMonth, isYTD);
-                      const subIdx = yoYDeltaToIndexPercent(subYoy.pct);
-                      return (
-                        <div key={label} className={subRowGridClass}>
-                          <div className="break-words text-gray-600 pl-0 md:pl-1 min-w-0 leading-snug text-[10px] sm:text-[11px] md:text-xs">
-                            {label}
-                          </div>
-                          <div className={metricCellClass}>
-                            <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
-                              금액
-                            </span>
-                            <span className="text-right text-gray-800">{toThousandCNY(subAmt)}</span>
-                          </div>
-                          <div className="flex justify-end items-baseline md:block md:text-right tabular-nums">
-                            <span className="text-right text-gray-500">
-                              {subPerPerson === null ? (
-                                <span className="text-gray-400">-</span>
-                              ) : (
-                                formatPerPersonThousandCny(subPerPerson)
-                              )}
-                            </span>
-                          </div>
-                          <div className={metricCellClass}>
-                            <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">YoY</span>
-                            <div className="text-right">
-                              {subIdx === 'N/A' ? (
-                                <span className="text-gray-400">N/A</span>
-                              ) : (
-                                <span className={subIdx >= 100 ? 'text-red-600' : 'text-blue-600'}>
-                                  {subIdx}%
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {showWelfareToggle && welfareExpanded && welfareSideResolved && (
-                  <div className="ml-2 sm:ml-4 md:ml-5 mt-1 space-y-1 pl-2 sm:pl-3 mb-1.5 sm:mb-2">
-                    {visibleWelfareL2.map((l2) => {
-                      const l2Monthly = welfareSideResolved.중분류[l2] || {};
-                      const l2Amt = amountForPeriod(l2Monthly, selectedMonth, isYTD);
-                      const l2PerPerson =
-                        salaryPerPersonDenominator > 0 ? l2Amt / salaryPerPersonDenominator : null;
-                      const l2Yoy = calculateYoY(l2Monthly, selectedMonth, isYTD);
-                      const l2Idx = yoYDeltaToIndexPercent(l2Yoy.pct);
-                      return (
-                        <div key={l2}>
-                          <div className={subRowGridClass}>
-                            <div className="break-words text-gray-600 pl-0 md:pl-1 min-w-0 leading-snug text-[10px] sm:text-[11px] md:text-xs">
-                              {l2}
-                            </div>
-                            <div className={metricCellClass}>
-                              <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
-                                금액
-                              </span>
-                              <span className="text-right text-gray-800">{toThousandCNY(l2Amt)}</span>
-                            </div>
-                            <div className="flex justify-end items-baseline md:block md:text-right tabular-nums">
-                              <span className="text-right text-gray-500">
-                                {l2PerPerson === null ? (
-                                  <span className="text-gray-400">-</span>
-                                ) : (
-                                  formatPerPersonThousandCny(l2PerPerson)
-                                )}
-                              </span>
-                            </div>
-                            <div className={metricCellClass}>
-                              <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
-                                YoY
-                              </span>
-                              <div className="text-right">
-                                {l2Idx === 'N/A' ? (
-                                  <span className="text-gray-400">N/A</span>
-                                ) : (
-                                  <span className={l2Idx >= 100 ? 'text-red-600' : 'text-blue-600'}>
-                                    {l2Idx}%
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          {l2 === '현지직원' && visibleWelfareL3Labels.length > 0 && (
-                            <div className="ml-2 sm:ml-3 mt-1 space-y-1 border-l border-gray-100 pl-2 sm:pl-3">
-                              {visibleWelfareL3Labels.map((l3) => {
-                                const l3Monthly = welfareSideResolved.현지직원세부[l3]!;
-                                const l3Amt = amountForPeriod(l3Monthly, selectedMonth, isYTD);
-                                const l3PerPerson =
-                                  salaryPerPersonDenominator > 0
-                                    ? l3Amt / salaryPerPersonDenominator
-                                    : null;
-                                const l3Yoy = calculateYoY(l3Monthly, selectedMonth, isYTD);
-                                const l3Idx = yoYDeltaToIndexPercent(l3Yoy.pct);
-                                return (
-                                  <div key={l3} className={subRowGridClass}>
-                                    <div className="break-words text-gray-500 pl-0 md:pl-1 min-w-0 leading-snug text-[11px] sm:text-xs">
-                                      {l3}
-                                    </div>
-                                    <div className={metricCellClass}>
-                                      <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
-                                        금액
-                                      </span>
-                                      <span className="text-right text-gray-800">
-                                        {toThousandCNY(l3Amt)}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-end items-baseline md:block md:text-right tabular-nums">
-                                      <span className="text-right text-gray-500">
-                                        {l3PerPerson === null ? (
-                                          <span className="text-gray-400">-</span>
-                                        ) : (
-                                          formatPerPersonThousandCny(l3PerPerson)
-                                        )}
-                                      </span>
-                                    </div>
-                                    <div className={metricCellClass}>
-                                      <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
-                                        YoY
-                                      </span>
-                                      <div className="text-right">
-                                        {l3Idx === 'N/A' ? (
-                                          <span className="text-gray-400">N/A</span>
-                                        ) : (
-                                          <span
-                                            className={l3Idx >= 100 ? 'text-red-600' : 'text-blue-600'}
-                                          >
-                                            {l3Idx}%
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
                         </div>
                       );
                     })}
