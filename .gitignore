@@ -44,3 +44,6 @@ __pycache__/
 
 # Snowflake SDK 로그 (실행할 때마다 커짐)
 snowflake.log
+
+# 정적 빌드 산출물 (Quick Dashboard 업로드용)
+out/

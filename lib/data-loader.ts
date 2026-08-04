@@ -123,34 +123,54 @@ export async function loadExchangeRates(): Promise<ExchangeRateData | null> {
 }
 
 /**
- * Snowflake에서 리테일 매출 로드 — (mei)리테일 스킬 정의.
- * 한 번의 호출로 당월·누적(YTD) × 당년·전년을 모두 받는다 (브랜드 5개 + 법인 + 경영지원).
+ * 리테일 매출 로드.
+ *
+ * - 로컬 개발: /api/retail-sales 로 **Snowflake 실시간 조회** (지금까지와 동일)
+ * - 배포(정적): API가 없으므로 전처리 스냅샷 JSON 사용
+ *   (scripts/fetch-retail-sales.mjs 가 API 응답을 월별로 구워둔 것)
+ *
+ * 개발 중 API가 실패해도 스냅샷으로 떨어져 화면이 비지 않는다.
  * @param selectedMonth "2025-12" 형식
  */
-export async function loadRetailSales(
+async function loadRetailSnapshot(
   selectedMonth: string
 ): Promise<RetailSalesResponse | null> {
   try {
+    const snapshot = await import('@/data/processed/retail-sales.json');
+    const byMonth = (snapshot.default ?? snapshot) as unknown as Record<
+      string,
+      RetailSalesResponse
+    >;
+    return byMonth[selectedMonth] ?? null;
+  } catch (err) {
+    console.warn('[리테일매출] 스냅샷 로드 실패:', err);
+    return null;
+  }
+}
+
+export async function loadRetailSales(
+  selectedMonth: string
+): Promise<RetailSalesResponse | null> {
+  if (process.env.NODE_ENV !== 'development') {
+    return loadRetailSnapshot(selectedMonth);
+  }
+
+  try {
     const response = await fetch(`/api/retail-sales?month=${selectedMonth}`);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = (await response.json()) as RetailSalesResponse;
 
-    console.log(`[리테일매출] 데이터 로드 완료: ${Object.keys(data.units ?? {}).join(', ')}`);
+    console.log(`[리테일매출] 실시간 조회 완료: ${Object.keys(data.units ?? {}).join(', ')}`);
     if (data.unmappedBrandCodes?.length) {
       console.warn(
         '[리테일매출] 법인 합산에서 제외된 brd_cd:',
         data.unmappedBrandCodes.map(b => `${b.brdCd}(${Math.round(b.ytdSale / 1000)}K)`).join(', ')
       );
     }
-
     return data;
   } catch (err) {
-    console.warn('[리테일매출] 데이터 로드 실패:', err);
-    return null;
+    console.warn('[리테일매출] API 실패 — 스냅샷으로 대체:', err);
+    return loadRetailSnapshot(selectedMonth);
   }
 }
 

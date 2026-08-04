@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "build:static": "node scripts/build-static.mjs",
+    "data:retail": "node scripts/fetch-retail-sales.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.18",
