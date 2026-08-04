@@ -26,7 +26,19 @@ HEADCOUNT_STORE_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/매�
 ADJUSTMENT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/조정분개")
 # 거래처(BP) 마스터 — 장부의 '상계 계정' 과 같은 코드 체계
 BP_MASTER_FILE = Path("D:/로컬파일/비용대시보드파일/BP.XLSX")
-MASTERS_DIR = BASE_DIR / "data" / "masters"
+# 마스터는 **로컬 원천 폴더 한 곳**에서만 읽는다 (비용파일·조정분개와 같은 폴더).
+# 리포에는 사본을 두지 않는다 — 두 곳에 있으면 어느 쪽이 정본인지 헷갈린다.
+MASTERS_DIR = Path("D:/로컬파일/비용대시보드파일")
+
+
+def master_path(name):
+    """마스터 파일 경로. 없으면 어디에 둬야 하는지 알려주고 중단한다."""
+    p = MASTERS_DIR / name
+    if not p.exists():
+        raise FileNotFoundError(
+            f"마스터 파일이 없습니다: {p} — 이 폴더에 '{name}' 을 두세요."
+        )
+    return p
 OUTPUT_DIR = BASE_DIR / "data" / "processed"
 OUTPUT_FILE = OUTPUT_DIR / "aggregated-costs.json"
 ANALYSIS_OUTPUT_FILE = OUTPUT_DIR / "account-analysis.json"
@@ -643,24 +655,15 @@ def load_master_files():
     
     # 코스트센터 마스터
     cost_center_master = pd.read_csv(
-        MASTERS_DIR / "코스트센터마스터.csv",
+        master_path("코스트센터마스터.csv"),
         encoding='utf-8-sig',
         dtype=str
     )
     # 컬럼명 정리
     cost_center_master.columns = cost_center_master.columns.str.strip()
     
-    # 계정과목 마스터
-    account_master = pd.read_csv(
-        MASTERS_DIR / "계정과목마스터.csv",
-        encoding='utf-8-sig',
-        dtype=str
-    )
-    # 컬럼명 정리
-    account_master.columns = account_master.columns.str.strip()
-
-    print(f"  - 코스트센터 마스터: {len(cost_center_master)}건")
-    print(f"  - 계정과목 마스터: {len(account_master)}건")
+    # 계정과목 마스터 — 통합 파일(계정과목master.csv)에서 관리식 컬럼만 사용
+    account_master = load_unified_account_master()
 
     # 계정과목 맵핑 (재무식) — sap code(=G/L 계정) → 연결계정과목
     account_mapping = load_account_mapping()
@@ -668,15 +671,41 @@ def load_master_files():
     return cost_center_master, account_master, account_mapping
 
 
+ACCOUNT_MASTER_FILE = "계정과목master.csv"
+
+
+def _read_account_master():
+    """계정 통합 마스터 — 관리식(대분류)·재무식(연결계정과목)이 한 파일에 있다."""
+    df = pd.read_csv(master_path(ACCOUNT_MASTER_FILE), encoding='utf-8-sig', dtype=str)
+    df.columns = df.columns.str.strip()
+    return df
+
+
+def load_unified_account_master():
+    """통합 마스터 → 기존 계정과목마스터 형태 (G/L 계정·name·대분류·중분류·설명·직접/영업)"""
+    df = _read_account_master()
+    out = pd.DataFrame({
+        'G/L 계정': df.get('sap code', '').fillna('').astype(str).str.strip(),
+        'name': df.get('sap name(CN)', '').fillna('').astype(str).str.strip(),
+        '대분류': df.get('대분류'),
+        '중분류': df.get('중분류'),
+        '설명': df.get('설명'),
+        '직접/영업': df.get('직접/영업'),
+    })
+    # G/L 없는 행(pkg 전용)·대분류 없는 행은 관리식 대상이 아니다
+    out = out[(out['G/L 계정'] != '') & out['대분류'].notna()]
+    out = out.drop_duplicates(subset=['G/L 계정'], keep='first')
+    return out
+
+
 def load_account_mapping():
-    """재무식 맵핑 로드: sap code → 연결계정과목 (없으면 None)"""
-    path = MASTERS_DIR / "계정과목맵핑.csv"
+    """재무식 맵핑 로드: sap code → 연결계정과목 (통합 마스터에서 읽는다)"""
+    path = master_path(ACCOUNT_MASTER_FILE)
     if not path.exists():
         print(f"  [주의] 계정과목맵핑.csv 없음 — 재무식 집계 스킵 ({path})")
         return None
 
-    df = pd.read_csv(path, encoding='utf-8-sig', dtype=str)
-    df.columns = df.columns.str.strip()
+    df = _read_account_master()
 
     required = {'sap code', '연결계정과목'}
     if not required.issubset(df.columns):
