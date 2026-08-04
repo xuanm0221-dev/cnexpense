@@ -934,7 +934,8 @@ def join_with_masters(df, cost_center_master, account_master, account_mapping=No
         'MLB': 'MLB', 'MLB KIDS': 'MLB KIDS', 'Discovery': 'Discovery', 'DISCOVERY': 'Discovery',
         'Duvetica': 'Duvetica', 'DUVETICA': 'Duvetica', 'SUPRA': 'SUPRA', '경영지원': '경영지원',
     }
-    FALLBACK_ACCOUNTS = ['96030101']
+    # 코스트센터가 비어 있는 계정 — 사업 영역 내역으로 사업부를 채운다
+    FALLBACK_ACCOUNTS = ['96030101', '41010112', '41010113', '41010114']
     BUSINESS_AREA_COL = '사업 영역 내역'
     
     no_cc = df['사업부'].isna()
@@ -947,9 +948,10 @@ def join_with_masters(df, cost_center_master, account_master, account_mapping=No
             return BUSINESS_AREA_MAPPING.get(v) or BUSINESS_AREA_MAPPING.get(v.upper())
         mapped = df.loc[need_fallback, BUSINESS_AREA_COL].apply(_map_bu)
         df.loc[need_fallback, '사업부'] = mapped
-        # 96030101 = 직접비
         filled = need_fallback & df['사업부'].notna()
-        df.loc[filled, '영업/직접'] = '직접비'
+        # 96030101(임차료)만 직접비로 고정. 나머지는 계정 마스터의 직접/영업을 따른다
+        rent_fb = filled & df['G/L 계정'].astype(str).str.strip().eq('96030101')
+        df.loc[rent_fb, '영업/직접'] = '직접비'
         if filled.sum() > 0:
             print(f"  [Fallback] 96030101: 사업 영역 내역으로 {filled.sum()}건 사업부 보정 (직접비)")
     
@@ -1046,7 +1048,17 @@ def filter_target_business_units(df):
     if '영업/직접' in df.columns:
         valid_cost_type = ['영업', '직접', '직접비']  # 직접비=fallback(96030101)용
         before_x = len(df)
-        df = df[df['영업/직접'].isin(valid_cost_type)]
+        cc_type = df['영업/직접'].fillna('').astype(str).str.strip()
+        # 코스트센터가 없는 계정(대리상지원금 등)은 계정 마스터의 직접/영업으로 판단한다
+        acc_type = (
+            df['직접/영업'].fillna('').astype(str).str.strip()
+            if '직접/영업' in df.columns
+            else pd.Series([''] * len(df), index=df.index)
+        )
+        keep_cost_type = cc_type.isin(valid_cost_type) | (
+            (cc_type == '') & acc_type.isin(valid_cost_type)
+        )
+        df = df[keep_cost_type]
         x_excluded = before_x - len(df)
         if x_excluded > 0:
             print(f"  - 영업/직접 'X' 제외: {x_excluded}건")
