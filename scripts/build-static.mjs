@@ -5,7 +5,9 @@
  * 빌드 동안만 app/api 를 잠시 옮겨두고 끝나면 되돌린다.
  * (로컬 개발은 API 라우트를 그대로 쓰므로 파일을 지우면 안 된다)
  *
- * 사용법: node scripts/build-static.mjs   →  out/ 생성
+ * 사용법: node scripts/build-static.mjs [slug]   →  out/ 생성
+ *   Quick Dashboard 서브패스(/server/quick-dashboard/<slug>)를 basePath 로 넣는다.
+ *   slug 생략 시 cn-expense. 루트 배포면 slug 자리에 '' 를 준다.
  */
 
 import { existsSync, renameSync } from 'node:fs';
@@ -16,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API_DIR = path.join(ROOT, 'app', 'api');
 const PARKED = path.join(ROOT, 'app', '_api.disabled');
+const SLUG = process.argv[2] ?? 'cn-expense';
+const BASE_PATH = SLUG ? `/server/quick-dashboard/${SLUG}` : '';
 
 if (existsSync(PARKED)) {
   console.error(`[정적빌드] 이전 빌드가 비정상 종료된 흔적: ${PARKED}\n먼저 app/api 로 되돌려주세요.`);
@@ -27,14 +31,14 @@ try {
   if (existsSync(API_DIR)) {
     renameSync(API_DIR, PARKED);
     moved = true;
-    console.log('[정적빌드] app/api 잠시 비활성화');
+    console.log(`[정적빌드] basePath = ${BASE_PATH || '(루트)'} / app/api 잠시 비활성화`);
   }
 
   const res = spawnSync('npx', ['next', 'build'], {
     cwd: ROOT,
     stdio: 'inherit',
     shell: true,
-    env: { ...process.env, STATIC_EXPORT: '1' },
+    env: { ...process.env, STATIC_EXPORT: '1', STATIC_BASE_PATH: BASE_PATH },
   });
   if (res.status !== 0) process.exitCode = res.status ?? 1;
 } finally {
