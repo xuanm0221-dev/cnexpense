@@ -12,6 +12,8 @@ import KpiHighlightStrip from '@/components/KpiHighlightStrip';
 import MonthlyCostTrendChart from '@/components/MonthlyCostTrendChart';
 import CorporateSalarySubKpiStrip from '@/components/CorporateSalarySubKpiStrip';
 import AccountAnalysisPanel from '@/components/AccountAnalysisPanel';
+import DeepAnalysisPanel from '@/components/expense/DeepAnalysisPanel';
+import { TAB_DEEP, type PanelTab } from '@/lib/panel-tabs';
 import {
   buildAccountAnalysis,
   buildSubLevels,
@@ -65,6 +67,7 @@ import {
   loadStoreHeadcountData,
   loadRetailSales,
   loadAccountAnalysis,
+  selectableMonths,
   retailChannelsFor,
   retailMetricsFor,
   toRetailSalesData,
@@ -94,6 +97,8 @@ export default function HomePage() {
   
   // 카드에 표시할 사업부 (드롭다운). '법인'이면 6개 사업부 합산
   const [selectedUnit, setSelectedUnit] = useState<string>(CORPORATE_RETAIL_UNIT);
+  /** 우측 패널 전환 — 탭은 헤더(기준월 옆)에 있고 내용은 패널에 그려진다 */
+  const [panelTab, setPanelTab] = useState<PanelTab>(TAB_DEEP);
   
   // 직접비/영업비/전체 탭 (모든 카드 동기화) — 관리식 기본은 영업비
   const [activeTab, setActiveTab] = useState<CostType>('영업비');
@@ -143,10 +148,13 @@ export default function HomePage() {
         setAnalysisData(analysis);
         
         // 가장 최근 월을 기본값으로 설정 (비용+인원수 통합 월 목록 사용)
-        const costMonths = costData.metadata.months;
         const headcountMonths = headcount ? Object.values(headcount).flatMap(bu => Object.keys(bu)) : [];
         const storeMonths = storeHeadcount ? Object.values(storeHeadcount).flatMap(bu => Object.keys(bu)) : [];
-        const allMonths = [...new Set([...costMonths, ...headcountMonths, ...storeMonths])].sort();
+        const allMonths = selectableMonths(
+          costData.metadata.months,
+          headcountMonths,
+          storeMonths
+        );
         if (allMonths.length > 0) {
           setSelectedMonth(allMonths[allMonths.length - 1]);
         }
@@ -161,12 +169,12 @@ export default function HomePage() {
     fetchData();
   }, []);
 
-  // 비용·인원수·매장인원수 월 목록 통합 (2026년 등 신규 월 표시)
+  // 비용·인원수·매장인원수 월 목록 통합 (2026년 등 신규 월 표시).
+  // 비용 데이터 첫 달(2025-01) 이전은 제외 — 인원수만 있는 2024년은 선택할 게 없다.
   const mergedMonths = useMemo(() => {
-    const costMonths = data?.metadata?.months ?? [];
     const headcountMonths = headcountData ? Object.values(headcountData).flatMap(bu => Object.keys(bu)) : [];
     const storeMonths = storeHeadcountData ? Object.values(storeHeadcountData).flatMap(bu => Object.keys(bu)) : [];
-    return [...new Set([...costMonths, ...headcountMonths, ...storeMonths])].sort();
+    return selectableMonths(data?.metadata?.months ?? [], headcountMonths, storeMonths);
   }, [data, headcountData, storeHeadcountData]);
 
   /** 카드·우측 표가 함께 쓰는 선택 사업부 비용 (법인이면 6개 사업부 합산) */
@@ -432,7 +440,7 @@ export default function HomePage() {
     [analysisData]
   );
 
-  /** 계정별 분석 — 카드(대분류 표)와 같은 순서·같은 기준 */
+  /** 계정별 증감 — 카드(대분류 표)와 같은 순서·같은 기준 */
   const analysisRows = useMemo(() => {
     if (!analysisData || !selectedMonth) return [];
     const prevPeriod = previousYearPeriod(period);
@@ -547,6 +555,8 @@ export default function HomePage() {
         months={mergedMonths}
         selectedMonth={selectedMonth}
         viewMode={viewMode}
+        panelTab={panelTab}
+        onPanelTabChange={setPanelTab}
         onMonthChange={setSelectedMonth}
         onViewModeChange={setViewMode}
         disabledViewModes={disabledViewModes}
@@ -572,7 +582,7 @@ export default function HomePage() {
       {/* 사업부 카드 그리드 */}
       <div className="max-w-[min(100vw,2400px)] mx-auto px-2 py-6 flex flex-col gap-5">
         {/*
-          위: 카드(고정 폭) + 계정별 분석 영역(남는 폭 전부).
+          위: 카드(고정 폭) + 심층분석/계정별 증감 패널(남는 폭 전부).
           아래: KPI·월별 계정 추이·막대 차트를 전체 폭으로.
           좁은 화면에서는 세로로 쌓아 글자가 넘치지 않게 한다.
         */}
@@ -655,8 +665,77 @@ export default function HomePage() {
             );
           })()}
 
-          {/* 카드 우측 — 계정별 분석 (적요 기반 구성 증감) */}
+          {/* 카드 우측 — 심층분석 / 계정별 증감 전환 패널 */}
           <AccountAnalysisPanel
+            tab={panelTab}
+            monthly={
+                (() => {
+            const unitName =
+              selectedUnit === CORPORATE_RETAIL_UNIT
+                ? '법인'
+                : BUSINESS_UNITS.find(b => b.id === selectedUnit)?.name ?? selectedUnit;
+            const activeCostSide =
+              costBasis === '재무식' || activeTab === '전체' ? undefined : activeTab;
+  
+              return (
+                <>
+                  {kpiMetrics && (
+                    <KpiHighlightStrip
+                      metrics={kpiMetrics}
+                      viewMode={viewMode}
+                      retailLoading={retailLoading}
+                      currency={effectiveCurrency}
+                      title={`${unitName} KPI`}
+                      activeCostSide={activeCostSide}
+                    />
+                  )}
+                  <MonthlyAccountMatrixTable
+                    costs={selectedUnitCosts}
+                    unitName={unitName}
+                    selectedMonth={selectedMonth}
+                    activeTab={activeTab}
+                    costBasis={costBasis}
+                    currency={effectiveCurrency}
+                    exchangeRates={exchangeRates}
+                    availableMonths={data.metadata.months}
+                    subLevels={subLevels}
+                    estimatedCategories={estimatedCategories}
+                  />
+                  {chartMonths.length > 0 && (
+                    <MonthlyCostTrendChart
+                      categoryData={chartCategoryData}
+                      months={chartMonths}
+                      costType={activeTab}
+                      onCostTypeChange={setActiveTab}
+                      showTotalTab
+                      showSideSummary={false}
+                      costBasis={costBasis}
+                      currency={effectiveCurrency}
+                      highlightMonthKey={selectedMonth}
+                      legendSelected={isCorporateUnit ? chartLegendSelected : undefined}
+                      onLegendSelectedChange={
+                        isCorporateUnit ? setChartLegendSelected : undefined
+                      }
+                    />
+                  )}
+                  {showSalarySubKpiStrip && salarySubKpiCards.length > 0 && (
+                    <CorporateSalarySubKpiStrip
+                      cards={salarySubKpiCards}
+                      costType={activeTab as '직접비' | '영업비' | '전체'}
+                    />
+                  )}
+                </>
+              );
+                })()
+              }
+            deepDive={
+              <DeepAnalysisPanel
+                unit={selectedUnit}
+                month={selectedMonth}
+                costType={activeTab}
+                viewMode={viewMode}
+              />
+            }
             rows={analysisRows}
             unitName={
               selectedUnit === CORPORATE_RETAIL_UNIT
@@ -673,65 +752,6 @@ export default function HomePage() {
           />
         </div>
 
-        {/* 카드 아래 — KPI 3종 → 월별 계정 표 → 월별 추이 차트 (카드와 같은 사업부·탭·기준) */}
-        {(() => {
-          const unitName =
-            selectedUnit === CORPORATE_RETAIL_UNIT
-              ? '법인'
-              : BUSINESS_UNITS.find(b => b.id === selectedUnit)?.name ?? selectedUnit;
-          const activeCostSide =
-            costBasis === '재무식' || activeTab === '전체' ? undefined : activeTab;
-
-            return (
-              <div className="w-full min-w-0 flex flex-col gap-5">
-                {kpiMetrics && (
-                  <KpiHighlightStrip
-                    metrics={kpiMetrics}
-                    viewMode={viewMode}
-                    retailLoading={retailLoading}
-                    currency={effectiveCurrency}
-                    title={`${unitName} KPI`}
-                    activeCostSide={activeCostSide}
-                  />
-                )}
-                <MonthlyAccountMatrixTable
-                  costs={selectedUnitCosts}
-                  unitName={unitName}
-                  selectedMonth={selectedMonth}
-                  activeTab={activeTab}
-                  costBasis={costBasis}
-                  currency={effectiveCurrency}
-                  exchangeRates={exchangeRates}
-                  availableMonths={data.metadata.months}
-                  subLevels={subLevels}
-                  estimatedCategories={estimatedCategories}
-                />
-                {chartMonths.length > 0 && (
-                  <MonthlyCostTrendChart
-                    categoryData={chartCategoryData}
-                    months={chartMonths}
-                    costType={activeTab}
-                    onCostTypeChange={setActiveTab}
-                    showTotalTab
-                    showSideSummary={false}
-                    costBasis={costBasis}
-                    currency={effectiveCurrency}
-                    highlightMonthKey={selectedMonth}
-                    legendSelected={isCorporateUnit ? chartLegendSelected : undefined}
-                    onLegendSelectedChange={
-                      isCorporateUnit ? setChartLegendSelected : undefined
-                    }
-                  />
-                )}
-                {showSalarySubKpiStrip && salarySubKpiCards.length > 0 && (
-                  <CorporateSalarySubKpiStrip
-                    cards={salarySubKpiCards}
-                    costType={activeTab as '직접비' | '영업비' | '전체'}
-                  />
-                )}
-              </div>
-            );
-        })()}
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import json
 import os
+import re
 import glob
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,33 @@ OUTPUT_FILE = OUTPUT_DIR / "aggregated-costs.json"
 ANALYSIS_OUTPUT_FILE = OUTPUT_DIR / "account-analysis.json"
 HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "headcount.json"
 STORE_HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "store-headcount.json"
+PLAN_OUTPUT_FILE = OUTPUT_DIR / "plan.json"
+
+# 계획(예산) 파일 — 사업부·대분류 명칭이 관리식 마스터와 다르다 (cn-report 체계).
+# 숫자가 아니라 **이름 대응**이라 규칙으로 둔다. 여기 없는 이름은 미매핑으로 남겨 로그에 찍는다.
+PLAN_FILE = Path("D:/로컬파일/비용대시보드파일/계획/2026년비용_plan.csv")
+PLAN_UNIT_MAP = {
+    'MLB': 'MLB',
+    'KIDS': 'MLB KIDS',
+    'DISCOVERY': 'Discovery',
+    '공통': '경영지원',
+}
+PLAN_CATEGORY_MAP = {
+    '인건비': '급여',
+    '복리후생비': '복리비',
+    # 아래는 계획서 명칭 = 관리식 대분류 명칭
+    '광고비': '광고비',
+    '수주회': '수주회',
+    '출장비': '출장비',
+    '지급수수료': '지급수수료',
+    '임차료': '임차료',
+    '감가상각비': '감가상각비',
+    '세금과공과': '세금과공과',
+    '기타': '기타',
+    # 관리식 대분류에 대응이 없는 것 — 계획 총액에는 들어가지만 대분류 비교에서는 빠진다
+    'IT수수료': None,
+    '차량렌트비': None,
+}
 
 # 분석 대상 사업부 (마스터 파일과 정확히 일치해야 함)
 TARGET_BUSINESS_UNITS = ["경영지원", "MLB", "MLB KIDS", "Discovery", "Duvetica", "SUPRA"]
@@ -54,6 +82,17 @@ TARGET_BUSINESS_UNITS = ["경영지원", "MLB", "MLB KIDS", "Discovery", "Duveti
 # 두 기준의 포함 계정이 다르므로 관리식·재무식 총액은 서로 다르다.
 USE_FLAG = "사용"
 FINANCIAL_EXCLUDED = "__제외__"
+
+# 대리상지원금/보조금 대분류. 이 중 4로 시작하는 계정은 코스트센터가 브랜드를 못 준다
+# (41xxx = 코스트센터 공란, 43xxx = CNF00000 Common). 브랜드는 장부 '자재'(SAP 자재코드)
+# 첫 글자로 판단한다 — 자재가 비어 있으면 '사업 영역 내역' 으로 넘어간다.
+AGENCY_CATEGORY = '대리상지원금'
+MATERIAL_COL = '자재'
+MATERIAL_BRAND_PREFIX = {
+    'I': 'MLB KIDS',
+    'M': 'MLB',
+    'X': 'Discovery',
+}
 
 # IFRS 조정분개를 귀속시킬 사업부 (조정분개 파일에 브랜드 구분이 없음)
 ADJUSTMENT_BUSINESS_UNIT = "MLB"
@@ -933,15 +972,51 @@ def join_with_masters(df, cost_center_master, account_master, account_mapping=No
     BUSINESS_AREA_MAPPING = {
         'MLB': 'MLB', 'MLB KIDS': 'MLB KIDS', 'Discovery': 'Discovery', 'DISCOVERY': 'Discovery',
         'Duvetica': 'Duvetica', 'DUVETICA': 'Duvetica', 'SUPRA': 'SUPRA', '경영지원': '경영지원',
+        '패션공통': '경영지원',   # 공통 코스트센터(CNF00000) — 브랜드 구분 없음
     }
+    gl_key = df['G/L 계정'].astype(str).str.strip()
+
+    # ── 대리상 4x 계정: 자재코드 첫 글자로 브랜드 배정 ──────────────────────────
+    # 코스트센터가 브랜드를 못 알려주는 계정들이다.
+    #   41010112/13/14 (대리상지원금)  : 코스트센터 공란
+    #   43010108/43030108 (대리상보조금): 코스트센터 CNF00000(Common) = 패션공통
+    # 43xxx 는 자재(SAP 자재코드)가 전 건 있고 첫 글자가 브랜드다. 41xxx 는 자재가 비어
+    # 있어 아래 사업 영역 내역 fallback 이 받는다. 그래서 자재 → 사업영역 순으로 본다.
+    agency_4x = sorted(
+        gl for gl in account_master.loc[
+            account_master['대분류'].fillna('').astype(str).str.strip() == AGENCY_CATEGORY,
+            'G/L 계정',
+        ].astype(str).str.strip()
+        if gl.startswith('4')
+    )
+    if agency_4x and MATERIAL_COL in df.columns:
+        is_agency = gl_key.isin(agency_4x)
+        head = (
+            df.loc[is_agency, MATERIAL_COL]
+            .fillna('').astype(str).str.strip().str[:1].str.upper()
+        )
+        brand = head.map(MATERIAL_BRAND_PREFIX)
+        hit = brand.notna()
+        if hit.any():
+            df.loc[brand.index[hit], '사업부'] = brand[hit]
+            print(
+                f"  [자재] 대리상 4x 계정 {len(agency_4x)}종: 자재코드 첫 글자로 "
+                f"{int(hit.sum()):,}건 브랜드 배정 "
+                f"({', '.join(f'{k}={v}' for k, v in MATERIAL_BRAND_PREFIX.items())})"
+            )
+        # 자재가 있는데 매핑에 없는 코드는 조용히 넘기지 않는다 (사업영역 fallback 으로 감)
+        unknown = sorted(set(head[~hit & (head != '')]))
+        if unknown:
+            print(f"  [주의] 자재 첫 글자 미매핑: {', '.join(unknown)} — 사업 영역 내역으로 처리")
+
     # 코스트센터가 비어 있는 계정 — 사업 영역 내역으로 사업부를 채운다
-    FALLBACK_ACCOUNTS = ['96030101', '41010112', '41010113', '41010114']
+    FALLBACK_ACCOUNTS = ['96030101'] + agency_4x
     BUSINESS_AREA_COL = '사업 영역 내역'
-    
+
     no_cc = df['사업부'].isna()
-    is_fallback = df['G/L 계정'].astype(str).str.strip().isin(FALLBACK_ACCOUNTS)
+    is_fallback = gl_key.isin(FALLBACK_ACCOUNTS)
     need_fallback = no_cc & is_fallback
-    
+
     if need_fallback.any() and BUSINESS_AREA_COL in df.columns:
         def _map_bu(val):
             v = str(val).strip() if pd.notna(val) else ''
@@ -950,10 +1025,13 @@ def join_with_masters(df, cost_center_master, account_master, account_mapping=No
         df.loc[need_fallback, '사업부'] = mapped
         filled = need_fallback & df['사업부'].notna()
         # 96030101(임차료)만 직접비로 고정. 나머지는 계정 마스터의 직접/영업을 따른다
-        rent_fb = filled & df['G/L 계정'].astype(str).str.strip().eq('96030101')
+        rent_fb = filled & gl_key.eq('96030101')
         df.loc[rent_fb, '영업/직접'] = '직접비'
         if filled.sum() > 0:
-            print(f"  [Fallback] 96030101: 사업 영역 내역으로 {filled.sum()}건 사업부 보정 (직접비)")
+            print(
+                f"  [Fallback] 사업 영역 내역으로 {filled.sum():,}건 사업부 보정 "
+                f"(96030101 임차료 {int(rent_fb.sum()):,}건은 직접비 고정)"
+            )
     
     # 2. 계정과목 마스터 조인 (직접/영업: 집계 시 코스트센터보다 우선)
     acc_cols = ['G/L 계정', '대분류', '중분류', '설명']
@@ -2215,11 +2293,99 @@ def preprocess_store_headcount():
         print("\n" + "=" * 60)
         print("매장 인원수 데이터 전처리 완료!")
         print("=" * 60)
-        
+
     except Exception as e:
         print(f"\n매장 인원수 데이터 전처리 오류 발생: {e}")
         import traceback
         traceback.print_exc()
+
+
+def process_plan():
+    """계획(예산) CSV → plan.json (사업부 → 대분류 → 연월 → 금액)
+
+    계획서는 cn-report 명칭 체계(KIDS·인건비·IT수수료)라 관리식 대분류로 이름을 맞춘다.
+    대응이 없는 대분류(IT수수료·차량렌트비)는 사업부 총액에는 넣되 대분류별에서는 빼고,
+    `unmappedCategories` 로 남겨 화면이 그 사실을 알 수 있게 한다.
+    """
+    print("\n" + "=" * 60)
+    print("계획(예산) 데이터 전처리")
+    print("=" * 60)
+
+    if not PLAN_FILE.exists():
+        print(f"  [건너뜀] 계획 파일 없음: {PLAN_FILE}")
+        return
+
+    df = pd.read_csv(PLAN_FILE, encoding='utf-8-sig', dtype=str)
+    df.columns = [str(c).strip() for c in df.columns]
+
+    month_cols = {}
+    for c in df.columns:
+        m = re.match(r'^(\d{2})년\s*(\d{1,2})월$', c.strip())
+        if m:
+            month_cols[c] = f"20{m.group(1)}-{int(m.group(2)):02d}"
+    if not month_cols:
+        print("  [건너뜀] 월 컬럼을 찾지 못했습니다.")
+        return
+
+    def num(v):
+        if pd.isna(v):
+            return 0.0
+        try:
+            return float(str(v).replace(',', '').strip() or 0)
+        except ValueError:
+            return 0.0
+
+    data = {}
+    totals = {}
+    unmapped_units, unmapped_cats = set(), set()
+
+    for _, row in df.iterrows():
+        raw_unit = str(row.get('사업부구분', '')).strip()
+        raw_cat = str(row.get('대분류', '')).strip()
+        unit = PLAN_UNIT_MAP.get(raw_unit)
+        if not unit:
+            if raw_unit:
+                unmapped_units.add(raw_unit)
+            continue
+
+        cat = PLAN_CATEGORY_MAP.get(raw_cat, raw_cat if raw_cat in PLAN_CATEGORY_MAP else None)
+        if raw_cat not in PLAN_CATEGORY_MAP:
+            unmapped_cats.add(raw_cat)
+        mapped = PLAN_CATEGORY_MAP.get(raw_cat)
+
+        for col, ym in month_cols.items():
+            amount = num(row.get(col))
+            if amount == 0:
+                continue
+            # 사업부 총액은 대응 여부와 무관하게 전부 더한다
+            totals.setdefault(unit, {})
+            totals[unit][ym] = totals[unit].get(ym, 0.0) + amount
+            if mapped:
+                data.setdefault(unit, {}).setdefault(mapped, {})
+                data[unit][mapped][ym] = data[unit][mapped].get(ym, 0.0) + amount
+
+    months = sorted({ym for ymap in totals.values() for ym in ymap})
+    result = {
+        "metadata": {
+            "generatedAt": datetime.now().isoformat(),
+            "months": months,
+            "businessUnits": sorted(totals.keys()),
+            "unmappedCategories": sorted(c for c in unmapped_cats if PLAN_CATEGORY_MAP.get(c) is None),
+            "unmappedUnits": sorted(unmapped_units),
+        },
+        "total": {u: {ym: round(v) for ym, v in sorted(m.items())} for u, m in totals.items()},
+        "data": {
+            u: {c: {ym: round(v) for ym, v in sorted(m.items())} for c, m in cats.items()}
+            for u, cats in data.items()
+        },
+    }
+
+    for u in sorted(totals):
+        print(f"  - {u}: 대분류 {len(data.get(u, {}))}종 / 연간 {sum(totals[u].values())/1e6:,.1f}백만")
+    if result['metadata']['unmappedCategories']:
+        print(f"  [주의] 관리식 대분류에 대응 없음(총액만 반영): {', '.join(result['metadata']['unmappedCategories'])}")
+
+    save_json(result, PLAN_OUTPUT_FILE)
 
 
 def main():
@@ -2350,6 +2516,7 @@ def main():
         # 인원수 데이터 전처리 (비용 데이터와 독립적으로 실행)
         preprocess_headcount()  # 사무실 인원수
         preprocess_store_headcount()  # 매장 인원수
+        process_plan()  # 계획(예산)
         
         print(f"\n다음 단계:")
         print(f"   1. git add {OUTPUT_FILE.relative_to(BASE_DIR)} {HEADCOUNT_OUTPUT_FILE.relative_to(BASE_DIR)} {STORE_HEADCOUNT_OUTPUT_FILE.relative_to(BASE_DIR)}")

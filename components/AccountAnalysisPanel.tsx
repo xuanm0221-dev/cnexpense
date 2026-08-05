@@ -1,17 +1,21 @@
 'use client';
 
 /**
- * 계정별 분석 — 카드 우측. 계정 순서는 카드(대분류 표)와 동일.
+ * 카드 우측 패널. 어느 화면을 보여줄지는 헤더(기준월 옆) 탭이 정한다.
+ *   심층분석    — deepDive prop 으로 주입 (AI보고서·비용구조 보고서·광고비 효율분석·종합 관리 평가)
+ *   계정별 증감 — 계정 순서는 카드(대분류 표)와 동일
  *
- * 한 계정당
+ * 계정별 증감은 한 계정당
  *   ① 환율효과 (원화일 때만) — 제외 시 전년비 / CNY 기준 증감률
  *   ② 구성별 증감 — 기표 적요를 키워드로 묶은 구성 (抖音·Douyin·틱톡 → 틱톡 하나로)
  *   ③ 브랜드별 증감 — 코스트센터 기준. 급여·인건비·광고비·수주회·출장비만 (법인 선택 시)
  */
 
+import type { ReactNode } from 'react';
 import type { AccountAnalysisRow, AnalysisDelta, BrandDetail } from '@/lib/account-analysis';
 import type { Currency } from '@/lib/exchange-rates';
 import { formatAmount, currencyUnitLabel } from '@/utils/formatters';
+import { TAB_DELTA, TAB_MONTHLY, type PanelTab } from '@/lib/panel-tabs';
 
 /** 증감액 — 부호 포함, 감소는 △ */
 function signed(value: number, currency: Currency): string {
@@ -170,6 +174,12 @@ export interface AccountAnalysisPanelProps {
   periodLabel: string;
   /** 원화면 환율효과 기준 안내 */
   fxNote?: string | null;
+  /** 심층분석 탭 내용 (미지정이면 준비 중 안내) */
+  deepDive?: ReactNode;
+  /** 월별 비용 탭 내용 — KPI · 월별 계정 표 · 추이 차트 */
+  monthly?: ReactNode;
+  /** 어느 화면을 보여줄지 — 헤더(기준월 옆) 탭이 정한다 */
+  tab: PanelTab;
 }
 
 export default function AccountAnalysisPanel({
@@ -178,34 +188,58 @@ export default function AccountAnalysisPanel({
   currency,
   periodLabel,
   fxNote,
+  deepDive,
+  monthly,
+  tab,
 }: AccountAnalysisPanelProps) {
+  const isDelta = tab === TAB_DELTA;
+  const isMonthly = tab === TAB_MONTHLY;
+
   return (
     <section
       className="w-full lg:flex-1 min-w-0 rounded-2xl border border-slate-200/80 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.08)] overflow-hidden flex flex-col"
-      aria-label={`${unitName} 계정별 분석`}
+      aria-label={`${unitName} ${tab}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-800 text-white">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h2 className="text-sm sm:text-base font-semibold tracking-tight">계정별 분석</h2>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 ring-1 ring-white/20">
-            {unitName}
-          </span>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 ring-1 ring-white/20">
-            {periodLabel} · 전년비
-          </span>
-        </div>
-        <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-700/70 ring-1 ring-white/10">
-          단위 {currencyUnitLabel(currency)}
-        </span>
-      </div>
+      {/*
+        헤더 바는 계정별 증감에만 둔다. 심층분석은 각 보고서가 자기 제목·기간·기준을
+        이미 달고 있어(예: "F&F CHINA 비용 적정성 검토 · 2026년 6월 · 영업비") 같은 정보가
+        두 줄로 겹친다.
+      */}
+      {isDelta && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-800 text-white">
+          <h2 className="text-sm sm:text-base font-semibold tracking-tight">{tab}</h2>
 
-      {fxNote && (
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 ring-1 ring-white/20">
+              {unitName}
+            </span>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 ring-1 ring-white/20">
+              {periodLabel} · 전년비
+            </span>
+            <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-700/70 ring-1 ring-white/10">
+              단위 {currencyUnitLabel(currency)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isDelta && fxNote && (
         <p className="px-4 py-1.5 text-[11px] text-slate-500 bg-amber-50/60 border-b border-amber-100">
           {fxNote}
         </p>
       )}
 
-      {rows.length === 0 ? (
+      {isMonthly ? (
+        <div className="flex-1 overflow-auto p-4">
+          <div className="w-full min-w-0 flex flex-col gap-5">{monthly}</div>
+        </div>
+      ) : !isDelta ? (
+        deepDive ?? (
+          <div className="flex-1 flex items-center justify-center min-h-[12rem] text-sm text-slate-400">
+            심층분석 내용 준비 중입니다.
+          </div>
+        )
+      ) : rows.length === 0 ? (
         <div className="flex-1 flex items-center justify-center min-h-[12rem] text-sm text-slate-400">
           분석할 계정 데이터가 없습니다.
         </div>

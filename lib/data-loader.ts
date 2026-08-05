@@ -38,6 +38,25 @@ export function isDataEmpty(data: CostData | null): boolean {
 }
 
 /**
+ * 월 선택 드롭다운에 쓸 월 목록 (오름차순).
+ *
+ * 인원수·매장인원수 파일은 2024년부터 있지만 비용 데이터는 2025년부터라, 그냥 합치면
+ * 비용이 하나도 없는 연도가 드롭다운에 남는다. **비용 데이터의 첫 달을 하한**으로 잡아
+ * 그 이전 월은 뺀다. 인원수 데이터 자체는 그대로 두므로 전년 대비 조회에는 영향이 없다.
+ *
+ * @param costMonths 비용 데이터의 월 목록 (하한 기준)
+ * @param extra 인원수 등 추가 월 목록 (신규 월을 먼저 보여주기 위해 합침)
+ */
+export function selectableMonths(
+  costMonths: string[],
+  ...extra: string[][]
+): string[] {
+  const merged = [...new Set([...costMonths, ...extra.flat()])].sort();
+  const floor = [...costMonths].sort()[0];
+  return floor ? merged.filter(m => m >= floor) : merged;
+}
+
+/**
  * 전처리된 인원수 데이터 로드
  * @returns 인원수 데이터
  */

@@ -13,6 +13,7 @@ import MonthSelector from './MonthSelector';
 import { CostBasis, ViewMode } from '@/lib/types';
 import type { Currency } from '@/lib/exchange-rates';
 import ViewControls from './ViewControls';
+import { PANEL_TABS, type PanelTab } from '@/lib/panel-tabs';
 
 const PREPROCESS_CMD_INCREMENTAL = 'python scripts/preprocess.py';
 const PREPROCESS_CMD_FULL = 'python scripts/preprocess.py --full';
@@ -35,6 +36,9 @@ interface DashboardHeaderProps {
   appliedRate: number | null;
   /** 환율 적용 기준 라벨 ('월평균' | '기간평균') */
   appliedRateLabel: string;
+  /** 우측 패널 전환 (심층분석 / 계정별 증감) — 기준월 바로 옆 */
+  panelTab: PanelTab;
+  onPanelTabChange: (tab: PanelTab) => void;
 }
 
 export default function DashboardHeader({
@@ -51,6 +55,8 @@ export default function DashboardHeader({
   onOpenRateTable,
   appliedRate,
   appliedRateLabel,
+  panelTab,
+  onPanelTabChange,
 }: DashboardHeaderProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -65,6 +71,8 @@ export default function DashboardHeader({
   };
 
   return (
+    // 스크롤해도 기간·기준·전환 탭은 계속 보여야 한다 (표가 길어 자주 내려간다).
+    // 제목은 접히고 컨트롤 줄만 남도록 아래에서 sticky 를 건다.
     <div className="bg-gradient-to-b from-white to-slate-50/90 border-b border-slate-200/80 px-2 py-4">
       <div className="max-w-[min(100vw,2400px)] mx-auto">
         {/* 제목 (가운데 정렬) */}
@@ -92,7 +100,8 @@ export default function DashboardHeader({
         </div>
         
         {/* 탭과 월 선택 */}
-        <div className="flex items-center gap-5 border-b border-slate-200/80">
+        {/* 컨트롤 줄 — 스크롤해도 상단에 고정 */}
+        <div className="sticky top-0 z-40 -mx-2 px-2 bg-gradient-to-b from-white to-slate-50/95 backdrop-blur-sm flex items-center gap-5 border-b border-slate-200/80 shadow-sm shadow-slate-200/40">
           <div className="pb-3 flex flex-wrap items-center gap-2">
             <ViewControls
               viewMode={viewMode}
@@ -115,6 +124,32 @@ export default function DashboardHeader({
               selectedMonth={selectedMonth}
               onChange={onMonthChange}
             />
+          </div>
+
+          {/* 우측 패널 전환 — 기준월 바로 옆 */}
+          <div className="pb-3">
+            <div
+              role="tablist"
+              aria-label="우측 패널 전환"
+              className="flex items-center gap-0.5 p-1 rounded-xl border border-slate-300 bg-white/95 shadow-sm shadow-slate-200/40"
+            >
+              {PANEL_TABS.map(name => (
+                <button
+                  key={name}
+                  type="button"
+                  role="tab"
+                  aria-selected={panelTab === name}
+                  onClick={() => onPanelTabChange(name)}
+                  className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors ${
+                    panelTab === name
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* 전처리 명령 버튼 (우측 정렬) */}

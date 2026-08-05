@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/*
+ * 심층분석 보고서(cn-report 에서 가져온 화면)가 쓰는 브랜드 색.
+ * 같은 값(#0b2d52)을 써야 원본과 같은 톤이 난다.
+ */
+@theme {
+  --color-navy: #0b2d52;
+  --color-navy-dark: #15406b;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
