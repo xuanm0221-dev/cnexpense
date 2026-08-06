@@ -68,6 +68,9 @@ import {
   loadRetailSales,
   loadAccountAnalysis,
   selectableMonths,
+  loadPlanData,
+  annualPlanFor,
+  type PlanData,
   retailChannelsFor,
   retailMetricsFor,
   toRetailSalesData,
@@ -85,6 +88,7 @@ export default function HomePage() {
   const [storeHeadcountData, setStoreHeadcountData] = useState<StoreHeadcountData | null>(null);
   const [retailResponse, setRetailResponse] = useState<RetailSalesResponse | null>(null);
   const [analysisData, setAnalysisData] = useState<AccountAnalysisData | null>(null);
+  const [planData, setPlanData] = useState<PlanData | null>(null);
   const [retailLoading, setRetailLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,12 +132,13 @@ export default function HomePage() {
     async function fetchData() {
       try {
         setLoading(true);
-        const [costData, headcount, storeHeadcount, rates, analysis] = await Promise.all([
+        const [costData, headcount, storeHeadcount, rates, analysis, plan] = await Promise.all([
           loadCostData(),
           loadHeadcountData(),
           loadStoreHeadcountData(),
           loadExchangeRates(),
           loadAccountAnalysis(),
+          loadPlanData(),
         ]);
 
         if (isDataEmpty(costData)) {
@@ -146,6 +151,7 @@ export default function HomePage() {
         setStoreHeadcountData(storeHeadcount);
         setExchangeRates(rates);
         setAnalysisData(analysis);
+        setPlanData(plan);
         
         // 가장 최근 월을 기본값으로 설정 (비용+인원수 통합 월 목록 사용)
         const headcountMonths = headcount ? Object.values(headcount).flatMap(bu => Object.keys(bu)) : [];
@@ -184,6 +190,23 @@ export default function HomePage() {
       ? mergeCorporateBusinessUnitCosts(data.data)
       : data.data[selectedUnit];
   }, [data, selectedUnit]);
+
+  /** 선택 사업부의 연간 계획 (대분류 → 금액). 카드 표의 `연간계획·진척률` 컬럼용 */
+  const annualPlan = useMemo(() => {
+    const year = Number(selectedMonth.slice(0, 4));
+    if (!Number.isInteger(year)) return null;
+    return annualPlanFor(planData, selectedUnit, year, CORPORATE_BUSINESS_UNIT_IDS);
+  }, [planData, selectedUnit, selectedMonth]);
+
+  /**
+   * 카드 폭 — 계획 컬럼이 붙는 누적(YTD)·관리식에서는 넓게.
+   * 우측 패널은 flex-1 이라 여기서 줄인 만큼 자동으로 넓어진다.
+   */
+  const cardWidthClass =
+    costBasis === '관리식' && viewMode === '누적(YTD)' && activeTab === '영업비' && annualPlan
+      ? 'lg:w-[32rem] xl:w-[38rem]'
+      : 'lg:w-[24rem] xl:w-[27rem]';
+
 
   // 조회 기간 (당월 / 누적 / 분기)
   const period = useMemo(
@@ -582,9 +605,9 @@ export default function HomePage() {
       {/* 사업부 카드 그리드 */}
       <div className="max-w-[min(100vw,2400px)] mx-auto px-2 py-6 flex flex-col gap-5">
         {/*
-          위: 카드(고정 폭) + 심층분석/계정별 증감 패널(남는 폭 전부).
-          아래: KPI·월별 계정 추이·막대 차트를 전체 폭으로.
-          좁은 화면에서는 세로로 쌓아 글자가 넘치지 않게 한다.
+          위: 카드 + 우측 패널(남는 폭 전부). 좁은 화면에서는 세로로 쌓는다.
+          카드 표에 `연간계획·진척률` 두 컬럼이 붙는 누적(YTD)에서는 카드를 넓히고
+          그만큼 우측 패널이 줄어든다 (패널은 flex-1 이라 자동으로 따라온다).
         */}
         <div className="flex flex-col lg:flex-row gap-5 items-stretch">
           {/* 사업부 카드 — 제목 드롭다운으로 법인/브랜드 전환 */}
@@ -597,7 +620,7 @@ export default function HomePage() {
 
             if (!cardData) {
               return (
-                <div className="w-full lg:w-[24rem] xl:w-[27rem] shrink-0 bg-white rounded-2xl shadow-md border border-gray-200 p-6">
+                <div className={`w-full ${cardWidthClass} shrink-0 bg-white rounded-2xl shadow-md border border-gray-200 p-6`}>
                   <h2 className="text-xl font-bold text-gray-800 mb-2">{selectedUnit}</h2>
                   <p className="text-gray-500">데이터가 없습니다.</p>
                 </div>
@@ -630,7 +653,7 @@ export default function HomePage() {
               : storeHeadcountData?.[selectedUnit] ?? null;
 
             return (
-              <div className="w-full lg:w-[24rem] xl:w-[27rem] shrink-0">
+              <div className={`w-full ${cardWidthClass} shrink-0 transition-[width] duration-200`}>
               <BusinessUnitCard
                 key={selectedUnit}
                 id={selectedUnit}
@@ -660,6 +683,7 @@ export default function HomePage() {
                 onWelfareSubExpandedChange={setWelfareSubExpanded}
                 subLevels={subLevels}
                 estimatedCategories={estimatedCategories}
+                annualPlan={annualPlan}
               />
               </div>
             );

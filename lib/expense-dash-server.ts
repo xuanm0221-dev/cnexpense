@@ -1,7 +1,7 @@
 /**
  * 심층분석 API 들이 공유하는 서버측 데이터 로딩
  *
- * cost-report · ai-report · exec-scorecard 가 모두 같은 집계를 필요로 한다.
+ * cost-report · ai-report 가 같은 집계를 필요로 한다.
  * 라우트마다 JSON 을 읽고 매출을 조회하면 요청 하나에 Snowflake 질의가 여러 번 나가므로
  * 여기서 한 번만 만들고 **비용구분별로 캐시**한다.
  *

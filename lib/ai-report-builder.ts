@@ -73,8 +73,15 @@ export interface PeriodFigures {
   ratio: number | null;
   ratioPy: number | null;
   ratioDelta: number | null;
+  /** 기말 인원 (해당 월) */
   headcount: number;
   headcountPy: number;
+  /**
+   * 평균 인원 — 기간 누적 인원수 / 개월수.
+   * YTD 6월이면 1~6월 합을 6으로 나눈다. 전년도도 같은 기간(1~6월) 기준.
+   */
+  headcountAvg: number;
+  headcountAvgPy: number;
 }
 
 export interface UnitReport {
@@ -88,7 +95,14 @@ export interface UnitReport {
    * '가장 큰 변동 브랜드'·'주목 브랜드'는 법인 기준으로 봐야 순위가 뒤집히지 않는다.
    */
   contribPp: number | null;
-  /** YTD 기준 최대 변동 대분류 (법인 매출 기준 기여도) */
+  /** 매출 대비 인건비율(%) — 급여 × 1.13 / 매출 */
+  laborRatio: number | null;
+  /** 매출 대비 광고비율(%) */
+  adRatio: number | null;
+  /**
+   * YTD 최대 변동 대분류. %p 는 **자기 매출 기준** — 그 사업부 안에서 무엇이 움직였는지
+   * 보는 칸이라 자기 비용률 변화로 읽어야 한다. (법인 기여도는 contribPp / top3 가 따로 본다)
+   */
   maxItem: { category: string; deltaPp: number | null; amount: number } | null;
 }
 
@@ -162,8 +176,12 @@ export interface AdEfficiency {
 /** 계획(예산) — 사업부 → 대분류 → 연월 → 금액 */
 export interface PlanData {
   metadata: { months: string[]; businessUnits: string[]; unmappedCategories: string[] };
+  /** 월별 배분 — 계획비(YTD 실적 / YTD 계획) */
   total: Record<string, Record<string, number>>;
   data: Record<string, Record<string, Record<string, number>>>;
+  /** 연간 정본 — 연간계획·사용률 (파일의 `연간` 컬럼) */
+  annual: Record<string, Record<string, number>>;
+  annualTotal: Record<string, number>;
 }
 
 /** ② 종합 스코어 — 항목별 배점은 원본 보고서와 동일 */
@@ -249,6 +267,34 @@ export interface EfficiencyRow {
   verdict: string;
 }
 
+/**
+ * EXECUTIVE SUMMARY 문장 조각.
+ *
+ * 원본 보고서는 한 문장 안에서 토큰마다 색이 다르다 (사업부=인디고, 지표명=검정 볼드,
+ * 나쁜 전년비=빨강, 좋은 전년비=초록, 계획 관련=보라, 비용률=파랑).
+ * 화면에서 정규식으로 되짚으면 어떤 숫자가 매출인지 비용인지 알 수 없어 색이 틀리므로,
+ * **만들 때 아는 정보를 그대로 조각으로 내보낸다.**
+ */
+export type SummaryTone =
+  | 'plain'
+  /** 사업부명 */
+  | 'unit'
+  /** 지표명 (총비용·매출·광고비 …) */
+  | 'label'
+  /** 좋은 방향 */
+  | 'good'
+  /** 나쁜 방향 */
+  | 'bad'
+  /** 계획·사용률 */
+  | 'plan'
+  /** 비용률 */
+  | 'ratio';
+
+export interface SummarySegment {
+  text: string;
+  tone: SummaryTone;
+}
+
 /** ⑦ 사업부 × 비용 성격 */
 export interface NatureByUnitRow {
   unit: string;
@@ -282,8 +328,8 @@ export interface AiReport {
     best: UnitReport | null;
     top3: TopChange[];
   };
-  /** EXECUTIVE SUMMARY ▸ 문장들 */
-  execSummary: string[];
+  /** EXECUTIVE SUMMARY ▸ 문장들 (토큰별 색 정보 포함) */
+  execSummary: SummarySegment[][];
   scoreCards: ScoreCard[];
   checkpoints: Checkpoint[];
   corporate: UnitReport;
@@ -328,6 +374,20 @@ const pctI = (v: number | null | undefined) =>
   v == null ? '-' : `${Math.round(v).toLocaleString()}%`;
 const k = (v: number) => `${Math.round(v / 1000).toLocaleString()}K`;
 
+/** 기간 평균 인원 = 1~month 인원 합 / month (전년도 같은 기간도 동일 계산) */
+function avgHeadcount(
+  queries: ExpenseQueries,
+  unit: string,
+  year: number,
+  month: number
+): number {
+  const sum = queries
+    .getMonthlyTrend(unit, year, 'monthly')
+    .filter(r => r.month <= month)
+    .reduce((s, r) => s + r.headcount, 0);
+  return month > 0 ? Math.round(sum / month) : 0;
+}
+
 function figuresOf(
   queries: ExpenseQueries,
   unit: string,
@@ -342,6 +402,8 @@ function figuresOf(
   const ratioPy = py ? calculateCostRatio(py.amount, py.sales) : null;
 
   return {
+    headcountAvg: avgHeadcount(queries, unit, year, month),
+    headcountAvgPy: avgHeadcount(queries, unit, year - 1, month),
     expense: cy?.amount ?? 0,
     expensePy: py?.amount ?? 0,
     expenseYoy: calculateYoy(cy?.amount ?? null, py?.amount ?? null),
@@ -387,18 +449,24 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
     let maxItem: UnitReport['maxItem'] = null;
     for (const [category, amount] of cy) {
       const prev = py.get(category) ?? 0;
-      const deltaPp = contributionPp(amount, prev, corpSales, corpSalesPy);
+      // 자기 매출 기준 — 이 사업부 안에서 어떤 비목이 비용률을 움직였는지
+      const deltaPp = contributionPp(amount, prev, ytd.sales, ytd.salesPy);
       if (deltaPp == null) continue;
       if (!maxItem || Math.abs(deltaPp) > Math.abs(maxItem.deltaPp ?? 0)) {
         maxItem = { category, deltaPp, amount };
       }
     }
 
+    const ratioOf = (category: string) =>
+      ytd.sales ? (((cy.get(category) ?? 0) * VAT_FACTOR) / ytd.sales) * 100 : null;
+
     return {
       unit,
       monthly: figuresOf(queries, unit, year, month, 'monthly'),
       ytd,
       contribPp: contributionPp(ytd.expense, ytd.expensePy, corpSales, corpSalesPy),
+      laborRatio: ratioOf(LABOR_CATEGORY),
+      adRatio: ratioOf(AD_CATEGORY),
       maxItem,
     };
   };
@@ -607,6 +675,42 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
   const planUnitsFor = (unit: string): string[] =>
     unit === corpUnit ? Object.keys(plan?.total ?? {}) : [unit];
 
+  /**
+   * 계획이 잡힌 대분류 집합.
+   *
+   * 계획서는 사업부마다 세운 항목이 다르다 (예: 경영지원에는 급여 계획이 없다).
+   * 총액끼리 비교하면 실적에만 있는 항목 때문에 계획비가 부풀려지므로,
+   * **계획에 있는 대분류로만** 실적을 모아 비교한다.
+   */
+  const plannedCategoriesOf = (unit: string): Set<string> => {
+    const out = new Set<string>();
+    for (const u of planUnitsFor(unit)) {
+      for (const c of Object.keys(plan?.data[u] ?? {})) out.add(c);
+    }
+    return out;
+  };
+
+  /** 계획 대비 비교에 쓸 실적 — 계획이 있는 대분류만 합산 */
+  const comparableActual = (unit: string, upTo: number, m: ReportMode = 'ytd'): number | null => {
+    const planned = plannedCategoriesOf(unit);
+    if (planned.size === 0) return null;
+    return queries
+      .getMonthlyAggregatedByCategory(unit, year, upTo, m)
+      .filter(c => planned.has(c.cost_lv1))
+      .reduce((s, c) => s + c.amount, 0);
+  };
+
+  /** 계획 쪽도 같은 대분류만 합산 (미매핑 항목이 총액에 섞이지 않게) */
+  const comparablePlan = (unit: string, upTo: number): number | null => {
+    const planned = plannedCategoriesOf(unit);
+    if (planned.size === 0) return null;
+    let sum = 0;
+    for (const c of planned) {
+      sum += planOf(unit, upTo, c) ?? 0;
+    }
+    return sum;
+  };
+
   const planOf = (unit: string, upTo: number, category?: string): number | null => {
     if (!plan) return null;
     let sum = 0;
@@ -687,8 +791,9 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
     });
 
     // 계획집행 15 — 계획 대비 집행률이 100% 근처면 만점
-    const planAmount = planOf(u.unit, month);
-    const planPct = planAmount ? (u.ytd.expense / planAmount) * 100 : null;
+    const planAmount = comparablePlan(u.unit, month);
+    const actual = comparableActual(u.unit, month);
+    const planPct = planAmount && actual != null ? (actual / planAmount) * 100 : null;
     items.push({
       key: '계획집행',
       max: 15,
@@ -718,7 +823,7 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
 
   const scoreCards: ScoreCard[] = [
     buildScore(corporate, '법인전체'),
-    ...units.filter(u => u.ytd.ratio != null).map(u => buildScore(u, u.unit)),
+    ...units.map(u => buildScore(u, u.unit)),
   ];
 
   // ── ③ 체크포인트 ────────────────────────────────────────────────
@@ -777,7 +882,7 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
 
   const checkpoints: Checkpoint[] = [
     buildCheckpoint(corporate, '법인전체'),
-    ...units.filter(u => u.ytd.ratio != null).map(u => buildCheckpoint(u, u.unit)),
+    ...units.map(u => buildCheckpoint(u, u.unit)),
   ].filter(c => c.items.length > 0);
 
   if (!plan) {
@@ -789,18 +894,16 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
   }
 
   // ── 상세 분석 표 (A/B/C 블록) ────────────────────────────────────
+  /** 연간 계획 — 파일의 `연간` 컬럼이 정본 (월별 합과 다를 수 있다) */
   const planYearOf = (unit: string, category?: string): number | null => {
     if (!plan) return null;
     let sum = 0;
     let found = false;
     for (const u of planUnitsFor(unit)) {
-      const src = category ? plan.data[u]?.[category] : plan.total[u];
-      if (!src) continue;
-      for (const [ym, v] of Object.entries(src)) {
-        if (!ym.startsWith(String(year))) continue;
-        sum += v;
-        found = true;
-      }
+      const v = category ? plan.annual?.[u]?.[category] : plan.annualTotal?.[u];
+      if (v == null) continue;
+      sum += v;
+      found = true;
     }
     return found ? sum : null;
   };
@@ -825,9 +928,11 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
     const monthCy = amountAt(year, 'monthly');
     const ytdPy = amountAt(year - 1, 'ytd');
     const ytdCy = amountAt(year, 'ytd');
-    const planYtd = planOf(unit, month, category);
+    const planYtd = category ? planOf(unit, month, category) : comparablePlan(unit, month);
     const planYear = planYearOf(unit, category);
-    const planPct = planYtd ? (ytdCy / planYtd) * 100 : null;
+    // 총액 행은 계획이 잡힌 대분류만 모아 비교한다 (계획에 없는 항목이 섞이면 계획비가 튄다)
+    const planBase = category ? ytdCy : (comparableActual(unit, month) ?? ytdCy);
+    const planPct = planYtd ? (planBase / planYtd) * 100 : null;
     const ytdYoy = calculateYoy(ytdCy, ytdPy || null);
 
     return {
@@ -907,13 +1012,6 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
   );
 
   // C. 브랜드별 효율성 비교
-  const avgHeadcountOf = (unit: string, y: number): number => {
-    const rows = queries
-      .getMonthlyTrend(unit, y, 'monthly')
-      .filter(r => r.month <= month && r.headcount > 0);
-    return rows.length ? Math.round(rows.reduce((s, r) => s + r.headcount, 0) / rows.length) : 0;
-  };
-
   const efficiency: EfficiencyRow[] = scored.map(u => {
     const salesPerHead = u.ytd.headcount ? u.ytd.sales / u.ytd.headcount : null;
     const d = u.ytd.ratioDelta;
@@ -926,7 +1024,7 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
       ratio: u.ytd.ratio,
       ratioPy: u.ytd.ratioPy,
       headcountEnd: u.ytd.headcount,
-      headcountAvg: avgHeadcountOf(u.unit, year),
+      headcountAvg: u.ytd.headcountAvg,
       salesPerHead,
       verdict:
         u.ytd.ratio != null && u.ytd.ratio > 100
@@ -1010,45 +1108,114 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
   };
 
   // ── EXECUTIVE SUMMARY ───────────────────────────────────────────
-  const execSummary: string[] = [];
+  const seg = (text: string, tone: SummaryTone = 'plain'): SummarySegment => ({ text, tone });
+  /** 비용 전년비 — 늘면 나쁨. 단 정상 인상 범위(~110%)는 중립으로 본다 */
+  const costTone = (yoy: number | null): SummaryTone =>
+    yoy == null ? 'plain' : yoy > 110 ? 'bad' : yoy < 90 ? 'bad' : 'good';
+  /** 매출 전년비 — 늘면 좋음 */
+  const salesToneOf = (yoy: number | null): SummaryTone =>
+    yoy == null ? 'plain' : yoy >= 100 ? 'good' : 'bad';
+
+  const execSummary: SummarySegment[][] = [];
   const c = corporate;
+
   if (c.ytd.expenseYoy != null && c.ytd.salesYoy != null) {
-    execSummary.push(
-      `법인 YTD 총비용 ${k(c.ytd.expense)} (YOY ${pctI(c.ytd.expenseYoy)}), 매출 ${k(c.ytd.sales)} (YOY ${pctI(c.ytd.salesYoy)}) — ` +
-        (c.ytd.expenseYoy > c.ytd.salesYoy
-          ? `비용 증가율이 매출 증가율을 상회하여 비용률 악화 (YTD ${c.ytd.ratioPy?.toFixed(2)}% → ${c.ytd.ratio?.toFixed(2)}%, 당월 ${c.monthly.ratioPy?.toFixed(2)}% → ${c.monthly.ratio?.toFixed(2)}%)`
-          : `비용 증가율이 매출 증가율을 밑돌아 비용률 개선 (YTD ${c.ytd.ratioPy?.toFixed(2)}% → ${c.ytd.ratio?.toFixed(2)}%)`)
-    );
+    const worse = c.ytd.expenseYoy > c.ytd.salesYoy;
+    execSummary.push([
+      seg('법인', 'unit'),
+      seg(' YTD '),
+      seg('총비용', 'label'),
+      seg(` ${k(c.ytd.expense)} (`),
+      seg(`YOY ${pctI(c.ytd.expenseYoy)}`, costTone(c.ytd.expenseYoy)),
+      seg('), '),
+      seg('매출', 'label'),
+      seg(` ${k(c.ytd.sales)} (`),
+      seg(`YOY ${pctI(c.ytd.salesYoy)}`, salesToneOf(c.ytd.salesYoy)),
+      seg(worse ? ') — 비용 증가율이 매출 증가율을 상회하여 ' : ') — 비용 증가율이 매출 증가율을 밑돌아 '),
+      seg('비용률', 'label'),
+      seg(' '),
+      seg(worse ? '악화' : '개선', worse ? 'bad' : 'good'),
+      seg(` (YTD ${c.ytd.ratioPy?.toFixed(2)}% → ${c.ytd.ratio?.toFixed(2)}%, 당월 `),
+      seg(`${c.monthly.ratioPy?.toFixed(2)}% → ${c.monthly.ratio?.toFixed(2)}%`, 'ratio'),
+      seg(')'),
+    ]);
   }
-  const laborRow = categories.find(r => r.category === '급여');
+
+  const laborRow = categories.find(r => r.category === LABOR_CATEGORY);
   if (laborRow && c.ytd.headcount) {
     const perCapita = laborRow.amount / c.ytd.headcount;
     const perCapitaPy = c.ytd.headcountPy ? laborRow.amountPy / c.ytd.headcountPy : null;
-    execSummary.push(
-      `YTD ${laborRow.category} ${k(laborRow.amount)} (YOY ${pctI(laborRow.yoy)}), 인당 ${(perCapita / 1000).toFixed(1)}K` +
-        (perCapitaPy
-          ? ` (전년 ${(perCapitaPy / 1000).toFixed(1)}K, YOY ${pctI((perCapita / perCapitaPy) * 100)})`
-          : '')
-    );
+    const pcYoy = perCapitaPy ? (perCapita / perCapitaPy) * 100 : null;
+    execSummary.push([
+      seg('YTD '),
+      seg(laborRow.category, 'label'),
+      seg(` ${k(laborRow.amount)} (`),
+      seg(`YOY ${pctI(laborRow.yoy)}`, costTone(laborRow.yoy)),
+      seg('), '),
+      seg(`인당 ${laborRow.category}`, 'label'),
+      seg(` ${(perCapita / 1000).toFixed(1)}K`),
+      ...(perCapitaPy
+        ? [
+            seg(` (전년 ${(perCapitaPy / 1000).toFixed(1)}K, `),
+            seg(`YOY ${pctI(pcYoy)}`, costTone(pcYoy)),
+            seg(')'),
+          ]
+        : []),
+    ]);
   }
+
   const topAd = adByBrand.filter(a => a.amount > 0).sort((a, b) => b.amount - a.amount)[0];
   if (topAd) {
-    execSummary.push(
-      `${topAd.unit} YTD 광고비 ${k(topAd.amount)} (YOY ${pctI(topAd.yoy)}), 매출 대비 광고비율 ${topAd.adRatio?.toFixed(1) ?? '-'}% (전년 ${topAd.adRatioPy?.toFixed(1) ?? '-'}%)`
-    );
+    execSummary.push([
+      seg(topAd.unit, 'unit'),
+      seg(' YTD '),
+      seg(AD_CATEGORY, 'label'),
+      seg(` ${k(topAd.amount)} (`),
+      seg(`YOY ${pctI(topAd.yoy)}`, costTone(topAd.yoy)),
+      seg('), 매출 대비 '),
+      seg('광고비율', 'label'),
+      seg(' '),
+      seg(`${topAd.adRatio?.toFixed(1) ?? '-'}%`, 'ratio'),
+      seg(` (전년 ${topAd.adRatioPy?.toFixed(1) ?? '-'}%)`),
+    ]);
   }
-  for (const r of risks.filter(r => r.level === '높음').slice(0, 2)) {
-    execSummary.push(
-      `${r.unit} YTD ${r.category} ${k(r.amount)} (YOY ${pctI(r.yoy)}) — ${r.reason}`
-    );
+
+  for (const r of risks.filter(x => x.level === '높음').slice(0, 2)) {
+    const planned = planOf(r.unit, month, r.category);
+    execSummary.push([
+      seg(r.unit, 'unit'),
+      seg(' YTD '),
+      seg(r.category, 'label'),
+      seg(` ${k(r.amount)} (`),
+      seg(`YOY ${pctI(r.yoy)}`, 'bad'),
+      seg(')'),
+      ...(planned
+        ? [
+            seg(` / 계획 ${k(planned)} (`),
+            seg(`계획비 ${pctI((r.amount / planned) * 100)}`, 'plan'),
+            seg(')'),
+          ]
+        : []),
+      seg(` — ${r.reason}`),
+    ]);
   }
+
   const growth = units
     .filter(u => u.ytd.salesYoy != null && u.ytd.salesYoy > 150)
     .sort((a, b) => b.ytd.salesYoy! - a.ytd.salesYoy!)[0];
   if (growth) {
-    execSummary.push(
-      `${growth.unit} YTD 매출 ${k(growth.ytd.sales)} (YOY ${pctI(growth.ytd.salesYoy)}) 급성장 중이나 비용률 ${growth.ytd.ratio?.toFixed(1) ?? '-'}% — 투자 단계 구조`
-    );
+    execSummary.push([
+      seg(growth.unit, 'unit'),
+      seg(' YTD '),
+      seg('매출', 'label'),
+      seg(` ${k(growth.ytd.sales)} (`),
+      seg(`YOY ${pctI(growth.ytd.salesYoy)}`, 'good'),
+      seg(') 급성장 중이나 '),
+      seg('비용률', 'label'),
+      seg(' '),
+      seg(`${growth.ytd.ratio?.toFixed(1) ?? '-'}%`, 'ratio'),
+      seg(' — 투자 단계 적자 구조'),
+    ]);
   }
 
   // ── 인사이트 ────────────────────────────────────────────────────

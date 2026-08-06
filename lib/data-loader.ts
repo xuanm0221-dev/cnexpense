@@ -241,3 +241,46 @@ export function retailMetricsFor(
   if (!metrics) return null;
   return viewMode === '누적(YTD)' ? metrics.ytd : metrics.mtd;
 }
+
+/** 계획(예산) — 사업부 → 대분류 → 연월 → 금액 */
+export interface PlanData {
+  metadata: { months: string[]; businessUnits: string[]; unmappedCategories: string[] };
+  /** 월별 배분 — 계획비(YTD 실적 / YTD 계획)에 쓴다 */
+  total: Record<string, Record<string, number>>;
+  data: Record<string, Record<string, Record<string, number>>>;
+  /** 연간 정본 — 연간계획·진척률에 쓴다 (파일의 `연간` 컬럼) */
+  annual: Record<string, Record<string, number>>;
+  annualTotal: Record<string, number>;
+}
+
+export async function loadPlanData(): Promise<PlanData | null> {
+  try {
+    const mod = await import('@/data/processed/plan.json');
+    return mod.default as unknown as PlanData;
+  } catch {
+    // 계획 파일이 없으면 계획 컬럼을 그리지 않는다 (전처리에서 선택 항목)
+    return null;
+  }
+}
+
+/**
+ * 선택 사업부의 **연간** 계획 (대분류 → 금액). 파일의 `연간` 컬럼 기준.
+ * 법인이면 계획이 잡힌 사업부를 모두 더한다. 계획에 없는 대분류는 키가 없어 화면에서 '—' 로 뜬다.
+ */
+export function annualPlanFor(
+  plan: PlanData | null,
+  unit: string,
+  year: number,
+  corporateUnits: readonly string[]
+): Record<string, number> | null {
+  if (!plan) return null;
+  const units = corporateUnits.includes(unit) ? [unit] : Object.keys(plan.annual ?? plan.total);
+  const out: Record<string, number> = {};
+  for (const u of units) {
+    // 연간 컬럼이 정본. 월별 합은 배분 계획이라 항목에 따라 연간과 어긋날 수 있다
+    for (const [category, v] of Object.entries(plan.annual?.[u] ?? {})) {
+      out[category] = (out[category] ?? 0) + v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}

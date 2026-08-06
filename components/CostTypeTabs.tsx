@@ -43,11 +43,16 @@ const WELFARE_L2_ORDER = ['보험/공적금', '주재원', '현지직원'] as co
  */
 const GRID_COLS_WITH_PREV = 'md:grid-cols-[minmax(6.5rem,1.6fr)_1fr_1fr_1fr_0.85fr]';
 const GRID_COLS_BASE = 'md:grid-cols-[minmax(6rem,1.5fr)_1fr_1fr_0.85fr]';
+/**
+ * 연간계획·진척률까지 보이는 배치 (관리식 + 누적(YTD) 일 때만).
+ * 컬럼이 늘어난 만큼 대분류 칸을 줄여 좌우가 자동으로 맞춰지게 fr 로 잡는다.
+ */
+const GRID_COLS_WITH_PLAN = 'md:grid-cols-[minmax(5.5rem,1.35fr)_1fr_1fr_0.8fr_1fr_0.8fr]';
 
 /** 모바일: 세로 스택 / 데스크톱: 그리드 */
-const rowGridClassFor = (withPrev: boolean) =>
+const rowGridClassFor = (withPrev: boolean, withPlan = false) =>
   `p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid ${
-    withPrev ? GRID_COLS_WITH_PREV : GRID_COLS_BASE
+    withPrev ? GRID_COLS_WITH_PREV : withPlan ? GRID_COLS_WITH_PLAN : GRID_COLS_BASE
   } md:gap-2 lg:gap-3 md:items-center hover:bg-slate-50/70 transition-colors text-xs sm:text-sm`;
 
 const metricCellClass =
@@ -172,6 +177,12 @@ interface CostTypeTabsProps {
   subLevels?: SubLevels;
   /** 전년이 적요 추정으로 채워진 대분류 — '추정' 표시용 */
   estimatedCategories?: Set<string>;
+  /**
+   * 연간 계획 (대분류 → 연간 금액, 위안).
+   * 관리식 + 누적(YTD) 일 때만 `연간계획 · 진척률` 컬럼을 붙인다.
+   * 당월·분기는 연간 계획과 견줄 기간이 아니라 표시하지 않는다.
+   */
+  annualPlan?: Record<string, number> | null;
   /** 표시 통화 및 환율 (KRW는 재무식에서만) */
   currency?: Currency;
   exchangeRates?: ExchangeRateData | null;
@@ -201,6 +212,7 @@ export default function CostTypeTabs({
   financialPkg,
   subLevels,
   estimatedCategories,
+  annualPlan,
   currency = 'CNY',
   exchangeRates = null,
   period,
@@ -209,7 +221,6 @@ export default function CostTypeTabs({
   const isFinancial = costBasis === '재무식';
   /** 재무식은 전년 금액 컬럼을 항상 표시 */
   const withPrevColumn = isFinancial;
-  const rowGridClass = rowGridClassFor(withPrevColumn);
   /** 하위 구성 정렬·표시 판단에 쓸 월 (조회 기간 기준) */
   const subMonths = useMemo(() => {
     if (period.months.length > 0) return period.months;
@@ -259,6 +270,23 @@ export default function CostTypeTabs({
   };
 
   const activeTab = externalActiveTab ?? internalActiveTab;
+
+  // 계획 컬럼 — 관리식 + 누적(YTD) + 영업비 탭에서만.
+  //   · 당월·분기는 연간계획과 견줄 기간이 아니다
+  //   · 계획 파일이 **영업비 기준**이라 직접비·전체에 붙이면 대응되지 않는 비교가 된다
+  const withPlanColumns =
+    !isFinancial && viewMode === '누적(YTD)' && activeTab === '영업비' && !!annualPlan;
+  const rowGridClass = rowGridClassFor(withPrevColumn, withPlanColumns);
+
+  /**
+   * 진척률 판단 기준선 — 기준월까지 지난 비율 (6월이면 6/12 = 50%).
+   * 연간 계획을 균등하게 쓴다고 보고, 이 선을 넘으면 과집행으로 본다.
+   */
+  const elapsedPace = ((Number(selectedMonth.slice(5, 7)) || 0) / 12) * 100;
+  /** 진척률 색 — 경과 기준선 초과면 빨강 */
+  const progressTone = (progress: number) =>
+    progress > elapsedPace ? 'text-red-600 font-medium' : 'text-blue-600';
+
   const setActiveTab = onTabChange ?? setInternalActiveTab;
 
   const salaryExpandedControlled = onSalarySubExpandedChange !== undefined;
@@ -433,7 +461,11 @@ export default function CostTypeTabs({
         <div className="min-h-0 md:rounded-xl md:border md:border-slate-200/75 md:bg-slate-50/55 shadow-sm shadow-slate-200/30">
           <div
             className={`hidden md:grid ${
-              withPrevColumn ? GRID_COLS_WITH_PREV : GRID_COLS_BASE
+              withPrevColumn
+                ? GRID_COLS_WITH_PREV
+                : withPlanColumns
+                  ? GRID_COLS_WITH_PLAN
+                  : GRID_COLS_BASE
             } md:gap-2 lg:gap-3 sticky top-0 z-10 px-2 sm:px-3 py-2 mb-2 text-xs text-slate-500 font-semibold border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-sm`}
           >
             <div className="whitespace-nowrap">{isFinancial ? '연결계정과목' : '대분류'}</div>
@@ -441,7 +473,108 @@ export default function CostTypeTabs({
             {withPrevColumn && <div className="text-right whitespace-nowrap">전년금액</div>}
             <div className="text-right whitespace-nowrap">YOY금액</div>
             <div className="text-right whitespace-nowrap">YoY</div>
+            {withPlanColumns && (
+              <>
+                <div className="text-right whitespace-nowrap">연간계획</div>
+                <div className="text-right whitespace-nowrap">
+                  진척률
+                  <span className="ml-1 font-normal text-slate-400">
+                    ({Math.round(elapsedPace)}%)
+                  </span>
+                </div>
+              </>
+            )}
           </div>
+
+          {/* 합계 — 헤더 바로 아래. 표에 보이는 대분류를 그대로 더한 값 */}
+          {(() => {
+            let sum = 0;
+            let sumPrev = 0;
+            let sumPlan = 0;
+            let hasPlan = false;
+            for (const category of categories) {
+              const acc = fromMonthly(currentData[category]);
+              sum += periodValue(acc, period, currency, exchangeRates) ?? 0;
+              sumPrev += periodValue(acc, prevPeriod, currency, exchangeRates) ?? 0;
+              const planYear = annualPlan?.[category];
+              if (planYear) {
+                sumPlan += planYear;
+                hasPlan = true;
+              }
+            }
+            const totalYoy = yoyIndex(sum, sumPrev);
+            const totalDelta = sumPrev === 0 ? null : formatDelta(sum, sumPrev, currency);
+            const totalProgress = hasPlan && sumPlan ? (sum / sumPlan) * 100 : null;
+
+            return (
+              <div
+                className={`${rowGridClass} bg-slate-100/80 border-b border-slate-300 font-semibold text-gray-900`}
+              >
+                <div className="min-w-0 leading-snug md:whitespace-nowrap">합계</div>
+                <div className={metricCellClass}>
+                  <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">금액</span>
+                  <span className="text-right tabular-nums">{formatAmount(sum, currency)}</span>
+                </div>
+                {withPrevColumn && (
+                  <div className={metricCellClass}>
+                    <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
+                      전년금액
+                    </span>
+                    <span className="text-right text-gray-600 tabular-nums">
+                      {formatAmount(sumPrev, currency)}
+                    </span>
+                  </div>
+                )}
+                <div className={metricCellClass}>
+                  <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
+                    YOY금액
+                  </span>
+                  <span className="text-right tabular-nums">
+                    {totalDelta === null ? <span className="text-gray-400">—</span> : totalDelta}
+                  </span>
+                </div>
+                <div className={metricCellClass}>
+                  <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">YoY</span>
+                  <div className="text-right">
+                    {totalYoy === null ? (
+                      <span className="text-gray-400">N/A</span>
+                    ) : (
+                      <span className={totalYoy >= 100 ? 'text-red-600' : 'text-blue-600'}>
+                        {totalYoy}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {withPlanColumns && (
+                  <>
+                    <div className={metricCellClass}>
+                      <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
+                        연간계획
+                      </span>
+                      <span className="text-right text-gray-600 tabular-nums">
+                        {hasPlan ? formatAmount(sumPlan, currency) : <span className="text-gray-300">—</span>}
+                      </span>
+                    </div>
+                    <div className={metricCellClass}>
+                      <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
+                        진척률
+                      </span>
+                      <div className="text-right">
+                        {totalProgress === null ? (
+                          <span className="text-gray-300">—</span>
+                        ) : (
+                          <span className={progressTone(totalProgress)}>
+                            {Math.round(totalProgress)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="space-y-1.5 sm:space-y-2">
           {categories.map((category) => {
             const monthlyData = currentData[category];
@@ -533,6 +666,42 @@ export default function CostTypeTabs({
                       )}
                     </div>
                   </div>
+
+                  {withPlanColumns && (() => {
+                    const planYear = annualPlan?.[category] ?? null;
+                    // 진척률 = YTD 실적 / 연간계획. 계획이 없는 대분류는 비워 둔다
+                    const progress = planYear && amount != null ? (amount / planYear) * 100 : null;
+                    return (
+                      <>
+                        <div className={metricCellClass}>
+                          <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
+                            연간계획
+                          </span>
+                          <span className="text-right text-gray-500 tabular-nums">
+                            {planYear === null ? (
+                              <span className="text-gray-300">—</span>
+                            ) : (
+                              formatAmount(planYear, currency)
+                            )}
+                          </span>
+                        </div>
+                        <div className={metricCellClass}>
+                          <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
+                            진척률
+                          </span>
+                          <div className="text-right">
+                            {progress === null ? (
+                              <span className="text-gray-300">—</span>
+                            ) : (
+                              <span className={progressTone(progress)}>
+                                {Math.round(progress)}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
                 {showSubToggle && subOpen && (
                   <div className="ml-2 sm:ml-4 md:ml-5 mt-1 space-y-1 pl-2 sm:pl-3 mb-1.5 sm:mb-2">

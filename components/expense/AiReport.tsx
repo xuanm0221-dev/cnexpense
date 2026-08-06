@@ -14,6 +14,8 @@ import type {
   DetailRow,
   PeriodFigures,
   ReportMode,
+  SummarySegment,
+  SummaryTone,
 } from '@/lib/ai-report-builder';
 import type { CostType } from '@/lib/types';
 
@@ -122,6 +124,33 @@ const ITEM_COLOR: Record<string, string> = {
   광고비율: 'rgb(180, 83, 9)',
   계획집행: 'rgb(124, 58, 237)',
 };
+
+/** EXECUTIVE SUMMARY 토큰 색 — 원본 보고서 값 그대로 */
+const SUMMARY_TONE: Record<SummaryTone, string> = {
+  plain: '',
+  unit: 'font-semibold text-indigo-700',
+  label: 'font-semibold text-slate-900',
+  good: 'font-semibold text-emerald-700',
+  bad: 'font-semibold text-rose-700',
+  plan: 'font-semibold text-violet-700',
+  ratio: 'font-semibold text-blue-700',
+};
+
+function SummaryLine({ segments }: { segments: SummarySegment[] }) {
+  return (
+    <span>
+      {segments.map((sg, i) =>
+        sg.tone === 'plain' ? (
+          <span key={i}>{sg.text}</span>
+        ) : (
+          <strong key={i} className={SUMMARY_TONE[sg.tone]}>
+            {sg.text}
+          </strong>
+        )
+      )}
+    </span>
+  );
+}
 
 /** 매출 YoY 는 높을수록 좋고, 비용 YoY 는 낮을수록 좋다 */
 const salesTone = (yoy: number | null) => (yoy == null ? 'flat' : yoy >= 100 ? 'good' : 'bad');
@@ -431,14 +460,14 @@ export default function AiReport({ year, month, mode, costType }: AiReportProps)
               </span>
               <span className="text-purple-100 text-[12px]">{meta.title}</span>
             </div>
-            <div className="bg-purple-50 px-5 py-3 space-y-1.5">
+            <div className="bg-[#F3F1FD] px-5 py-3 space-y-1.5">
               {execSummary.map((s, i) => (
                 <div
                   key={i}
                   className="flex items-start gap-2.5 text-[13.5px] text-slate-700 leading-[1.6]"
                 >
                   <span className="text-purple-600 font-bold flex-shrink-0 mt-px">▸</span>
-                  <span>{s}</span>
+                  <SummaryLine segments={s} />
                 </div>
               ))}
             </div>
@@ -470,8 +499,8 @@ export default function AiReport({ year, month, mode, costType }: AiReportProps)
 
           <KpiCard title="인원" border="border-violet-200" bg="bg-violet-50/60" titleColor="text-violet-600">
             <KpiLine
-              label="(기말)"
-              value={`${cyt.headcount.toLocaleString()}명`}
+              label="(기말/평균)"
+              value={`${cyt.headcount.toLocaleString()}명/${cyt.headcountAvg.toLocaleString()}명`}
               badge={`${cyt.headcount - cyt.headcountPy >= 0 ? '+' : ''}${(cyt.headcount - cyt.headcountPy).toLocaleString()}명`}
               muted
             />
@@ -634,12 +663,12 @@ export default function AiReport({ year, month, mode, costType }: AiReportProps)
             >
               <thead>
                 <tr>
-                  {['사업부', '매출(K)', '총비용(K)', '비용 YoY', '총비용률', '전년', 'YoY', '광고비율', '최대 변동 항목', '신호'].map(
+                  {['사업부', '매출(K)', '총비용률', '전년', 'YoY', '인건비율', '광고비율', '최대 변동 항목', '신호'].map(
                     (h, i) => (
                       <th
                         key={h}
                         className="text-[12px] font-semibold text-[#4B5563] bg-[#F9FAFB] px-2 py-[5px] whitespace-nowrap border border-[#E5E7EB]"
-                        style={{ textAlign: i === 0 || i === 8 ? 'left' : 'center' }}
+                        style={{ textAlign: i === 0 || i === 7 ? 'left' : 'center' }}
                       >
                         {h}
                       </th>
@@ -648,30 +677,56 @@ export default function AiReport({ year, month, mode, costType }: AiReportProps)
                 </tr>
               </thead>
               <tbody>
-                {units.map(u => {
-                  const ad = adByBrand.find(a => a.unit === u.unit);
-                  const worse = (u.ytd.ratioDelta ?? 0) > 0;
+                {/* 법인전체 먼저, 이어서 사업부 */}
+                {[{ ...corporate, unit: '법인전체' }, ...units].map(u => {
+                  const d = u.ytd.ratioDelta;
+                  // 신호 — 비용률 악화 폭으로 (0.5%p 이상 주의, 1%p 이상 경고)
+                  const signal = d == null ? '–' : d >= 1 ? '🔴' : d >= 0.5 ? '🟡' : '🟢';
                   return (
                     <tr key={u.unit}>
                       <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-left font-bold text-slate-900">
                         {u.unit}
                       </td>
-                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right whitespace-nowrap">{k(u.ytd.sales)}</td>
-                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right whitespace-nowrap">{k(u.ytd.expense)}</td>
-                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right whitespace-nowrap">{pct(u.ytd.expenseYoy)}</td>
-                      <td className="text-[13px] px-2 py-1 border border-[#E5E7EB] text-right font-bold whitespace-nowrap">{pct2(u.ytd.ratio)}</td>
-                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right text-slate-400 whitespace-nowrap">{pct2(u.ytd.ratioPy)}</td>
-                      <td className={`text-[12px] px-2 py-1 border border-[#E5E7EB] text-right font-bold whitespace-nowrap ${worse ? 'text-rose-700' : 'text-emerald-700'}`}>
+                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right whitespace-nowrap">
+                        {k(u.ytd.sales)}
+                      </td>
+                      <td className="text-[13px] px-2 py-1 border border-[#E5E7EB] text-right font-bold whitespace-nowrap">
+                        {pct2(u.ytd.ratio)}
+                      </td>
+                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right text-slate-400 whitespace-nowrap">
+                        {pct2(u.ytd.ratioPy)}
+                      </td>
+                      <td
+                        className={`text-[12px] px-2 py-1 border border-[#E5E7EB] text-right font-bold whitespace-nowrap ${
+                          (d ?? 0) > 0 ? 'text-rose-700' : 'text-emerald-700'
+                        }`}
+                      >
                         {pp(u.ytd.ratioDelta)}
                       </td>
-                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right whitespace-nowrap">{pct1(ad?.adRatio)}</td>
+                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right whitespace-nowrap">
+                        {pct2(u.laborRatio)}
+                      </td>
+                      <td className="text-[12px] px-2 py-1 border border-[#E5E7EB] text-right whitespace-nowrap">
+                        {!u.adRatio ? '—' : pct2(u.adRatio)}
+                      </td>
                       <td className="text-[11px] px-2 py-1 border border-[#E5E7EB] text-left text-slate-600">
-                        {u.maxItem
-                          ? `${u.maxItem.category} ${pp(u.maxItem.deltaPp)} (${k(u.maxItem.amount)})`
-                          : '-'}
+                        {u.maxItem ? (
+                          <>
+                            {u.maxItem.category}{' '}
+                            <span
+                              className={
+                                (u.maxItem.deltaPp ?? 0) > 0 ? 'text-rose-700' : 'text-emerald-700'
+                              }
+                            >
+                              {pp(u.maxItem.deltaPp)}
+                            </span>
+                          </>
+                        ) : (
+                          '-'
+                        )}
                       </td>
                       <td className="text-[15px] px-2 py-1 border border-[#E5E7EB] text-center">
-                        {u.ytd.ratioDelta == null ? '–' : worse ? '🔴' : '🟢'}
+                        {signal}
                       </td>
                     </tr>
                   );

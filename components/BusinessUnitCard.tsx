@@ -65,6 +65,8 @@ interface BusinessUnitCardProps {
   onWelfareSubExpandedChange?: (open: boolean) => void;
   /** 관리식 하위 구성 (대분류 → 구성 → 월별) — 계정 1차 + 적요 보정 */
   subLevels?: SubLevels;
+  /** 연간 계획 (대분류 → 금액) — 관리식 + 누적(YTD) 에서만 표에 표시 */
+  annualPlan?: Record<string, number> | null;
   /** 전년이 적요 추정으로 채워진 대분류 */
   estimatedCategories?: Set<string>;
 }
@@ -99,6 +101,7 @@ export default function BusinessUnitCard({
   activeTab: externalActiveTab,
   onTabChange,
   costBasis = '관리식',
+  annualPlan,
   unitOptions,
   onUnitChange,
   currency = 'CNY',
@@ -677,6 +680,7 @@ export default function BusinessUnitCard({
           financialPkg={data.재무식PKG}
           subLevels={subLevels}
           estimatedCategories={estimatedCategories}
+          annualPlan={annualPlan}
           currency={currency}
           exchangeRates={exchangeRates}
           period={period}

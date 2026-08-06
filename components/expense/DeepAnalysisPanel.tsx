@@ -3,18 +3,17 @@
 /**
  * 심층분석 패널 — 우측 패널의 `심층분석` 탭 본문.
  *
- * 4개 화면을 서브탭으로 묶는다.
- *   AI보고서 · 비용구조 보고서 · 광고비 효율분석 · 종합 관리 평가
+ * 3개 화면을 서브탭으로 묶는다.
+ *   AI보고서 · 비용구조 보고서 · 광고비 효율분석
  *
  * 광고비 효율분석만 클라이언트 메모리 집계(setExpenseData)를 쓰고, 나머지 셋은 각자 API 를
  * 호출한다. 그래서 집계 로딩은 해당 탭을 열 때만 한다 (첫 진입에 불필요한 Snowflake 질의 방지).
  */
 
 import { useEffect, useState } from 'react';
-import { Bot, FileText, LineChart, Gauge } from 'lucide-react';
+import { Bot, FileText, LineChart } from 'lucide-react';
 import AiReport from './AiReport';
 import CostStructureReport from './CostStructureReport';
-import ExecScorecard from './ExecScorecard';
 import { AdSalesEfficiencyAnalysis } from './AdSalesEfficiencyAnalysis';
 import { hasExpenseData, setExpenseData } from '@/lib/expense-dash';
 import type { CostType, ViewMode } from '@/lib/types';
@@ -23,7 +22,6 @@ const TABS = [
   { key: 'ai', label: 'AI보고서', Icon: Bot },
   { key: 'structure', label: '비용구조 보고서', Icon: FileText },
   { key: 'ad', label: '광고비 효율분석', Icon: LineChart },
-  { key: 'scorecard', label: '종합 관리 평가', Icon: Gauge },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -128,8 +126,8 @@ export default function DeepAnalysisPanel({
           </button>
         ))}
         {/*
-          사업부는 탭 줄 오른쪽 끝에만 표시한다. 광고비 효율분석·종합 관리 평가는 선택 사업부
-          기준이라 어느 사업부를 보고 있는지가 필요한데, 이것 때문에 줄을 하나 더 두진 않는다.
+          사업부는 탭 줄 오른쪽 끝에만 표시한다. 광고비 효율분석은 선택 사업부 기준이라
+          어느 사업부를 보고 있는지가 필요한데, 이것 때문에 줄을 하나 더 두진 않는다.
         */}
         <span className="ml-auto shrink-0 text-[11px] font-semibold text-slate-500 pl-2">
           {unit}
@@ -143,9 +141,6 @@ export default function DeepAnalysisPanel({
         <CostStructureReport year={year} month={monthNum} costType={costType} />
       )}
       {tab === 'ad' && <AdEfficiencyTab unit={unit} year={year} costType={costType} />}
-      {tab === 'scorecard' && (
-        <ExecScorecard biz={unit} year={year} month={monthNum} costType={costType} />
-      )}
     </div>
   );
 }

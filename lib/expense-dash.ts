@@ -22,7 +22,7 @@ import type {
   MonthlyTotal,
 } from './expense-dash-types';
 import { corporateCostUnits, corporateSalesUnits } from './expense-dash-adapter';
-import { CORPORATE_RETAIL_UNIT } from './retail-brands';
+import { CORPORATE_RETAIL_UNIT, MANAGEMENT_SUPPORT_UNIT } from './retail-brands';
 
 export type {
   AggregatedData,
@@ -118,8 +118,15 @@ export function createExpenseQueries(data: AggregatedData): ExpenseQueries {
   const costUnitsOf = (bizUnit: BizUnit): string[] =>
     isCorporate(bizUnit) ? corporateCostUnits(data.metadata.target_biz_units) : [bizUnit];
 
+  /**
+   * 매출 합산 대상.
+   * 경영지원은 지원 조직이라 자체 매출이 없다 → **법인 전체 매출**을 분모로 쓴다
+   * (리테일 카드와 같은 규칙). 법인 합산 시에는 브랜드만 더하므로 이중계상되지 않는다.
+   */
   const salesUnitsOf = (bizUnit: BizUnit): string[] =>
-    isCorporate(bizUnit) ? corporateSalesUnits(data.metadata.sales_biz_units) : [bizUnit];
+    isCorporate(bizUnit) || bizUnit === MANAGEMENT_SUPPORT_UNIT
+      ? corporateSalesUnits(data.metadata.sales_biz_units)
+      : [bizUnit];
 
   const getMonthlyTrend: ExpenseQueries['getMonthlyTrend'] = (
     bizUnit,

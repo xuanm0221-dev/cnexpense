@@ -47,7 +47,9 @@ HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "headcount.json"
 STORE_HEADCOUNT_OUTPUT_FILE = OUTPUT_DIR / "store-headcount.json"
 PLAN_OUTPUT_FILE = OUTPUT_DIR / "plan.json"
 
-# 계획(예산) 파일 — 사업부·대분류 명칭이 관리식 마스터와 다르다 (cn-report 체계).
+# 계획(예산) 파일 — **영업비 기준** 계획이다. 직접비 계획은 없으므로 화면에서도
+# 관리식·누적(YTD)·영업비 탭일 때만 계획 컬럼을 붙인다.
+# 사업부·대분류 명칭이 관리식 마스터와 다르다 (cn-report 체계).
 # 숫자가 아니라 **이름 대응**이라 규칙으로 둔다. 여기 없는 이름은 미매핑으로 남겨 로그에 찍는다.
 PLAN_FILE = Path("D:/로컬파일/비용대시보드파일/계획/2026년비용_plan.csv")
 PLAN_UNIT_MAP = {
@@ -68,8 +70,9 @@ PLAN_CATEGORY_MAP = {
     '감가상각비': '감가상각비',
     '세금과공과': '세금과공과',
     '기타': '기타',
+    # 계획서의 IT수수료는 관리식에서 지급수수료에 포함돼 있다 (사용자 확인)
+    'IT수수료': '지급수수료',
     # 관리식 대분류에 대응이 없는 것 — 계획 총액에는 들어가지만 대분류 비교에서는 빠진다
-    'IT수수료': None,
     '차량렌트비': None,
 }
 
@@ -87,6 +90,10 @@ FINANCIAL_EXCLUDED = "__제외__"
 # (41xxx = 코스트센터 공란, 43xxx = CNF00000 Common). 브랜드는 장부 '자재'(SAP 자재코드)
 # 첫 글자로 판단한다 — 자재가 비어 있으면 '사업 영역 내역' 으로 넘어간다.
 AGENCY_CATEGORY = '대리상지원금'
+
+# 영업비에서만 '기타' 하위로 내리는 대분류 (직접비는 건드리지 않는다)
+RELOCATED_OPS_CATEGORY = '물류비'
+RELOCATE_INTO = '기타'
 MATERIAL_COL = '자재'
 MATERIAL_BRAND_PREFIX = {
     'I': 'MLB KIDS',
@@ -1050,6 +1057,34 @@ def join_with_masters(df, cost_center_master, account_master, account_mapping=No
         print(f"  [주의] 계정과목 조인 실패: {len(no_account)}건")
         unique_gl = no_account['G/L 계정'].unique()
         print(f"     미매칭 G/L 계정 전체: {', '.join(map(str, unique_gl))}")
+
+    # 2-1. 영업비 물류비 → '기타' 하위로 재배치
+    #
+    # 영업비 쪽 물류비는 금액이 작아(법인 YTD 0.7백만) 대분류로 두면 표만 길어진다.
+    # 대분류를 '기타'로 바꾸면 구성(하위 레벨)에는 계정명이 그대로 남아 계정 단위로 보인다.
+    # **직접비 물류비(149백만)는 규모도 성격도 달라 별도 대분류로 그대로 둔다.**
+    if '대분류' in df.columns:
+        acc_side = (
+            df['직접/영업'].fillna('').astype(str).str.strip()
+            if '직접/영업' in df.columns
+            else pd.Series([''] * len(df), index=df.index)
+        )
+        cc_side = (
+            df['영업/직접'].fillna('').astype(str).str.strip()
+            if '영업/직접' in df.columns
+            else pd.Series([''] * len(df), index=df.index)
+        )
+        # 집계와 같은 우선순위: 계정 마스터의 직접/영업이 있으면 그것, 없으면 코스트센터
+        side = acc_side.where(acc_side.isin(['영업', '영업비', '직접', '직접비']), cc_side)
+        is_ops = side.isin(['영업', '영업비'])
+        move = is_ops & df['대분류'].astype(str).str.strip().eq(RELOCATED_OPS_CATEGORY)
+        if move.any():
+            amount = df.loc[move, '금액(전표 통화)'].sum()
+            df.loc[move, '대분류'] = RELOCATE_INTO
+            print(
+                f"  - 영업비 {RELOCATED_OPS_CATEGORY} → {RELOCATE_INTO} 하위로 재배치: "
+                f"{int(move.sum()):,}건 / {amount:,.0f} 위안"
+            )
 
     # 3. 계정과목 맵핑 조인 (재무식: 연결계정과목)
     if account_mapping is not None:
@@ -2304,7 +2339,7 @@ def process_plan():
     """계획(예산) CSV → plan.json (사업부 → 대분류 → 연월 → 금액)
 
     계획서는 cn-report 명칭 체계(KIDS·인건비·IT수수료)라 관리식 대분류로 이름을 맞춘다.
-    대응이 없는 대분류(IT수수료·차량렌트비)는 사업부 총액에는 넣되 대분류별에서는 빼고,
+    대응이 없는 대분류(차량렌트비)는 사업부 총액에는 넣되 대분류별에서는 빼고,
     `unmappedCategories` 로 남겨 화면이 그 사실을 알 수 있게 한다.
     """
     print("\n" + "=" * 60)
@@ -2319,13 +2354,18 @@ def process_plan():
     df.columns = [str(c).strip() for c in df.columns]
 
     month_cols = {}
+    annual_col = None
     for c in df.columns:
         m = re.match(r'^(\d{2})년\s*(\d{1,2})월$', c.strip())
         if m:
             month_cols[c] = f"20{m.group(1)}-{int(m.group(2)):02d}"
+        elif re.match(r'^(\d{4})년\s*연간$', c.strip()):
+            annual_col = c
     if not month_cols:
         print("  [건너뜀] 월 컬럼을 찾지 못했습니다.")
         return
+    if annual_col is None:
+        print("  [주의] '연간' 컬럼이 없어 월별 합으로 연간을 만듭니다.")
 
     def num(v):
         if pd.isna(v):
@@ -2337,6 +2377,12 @@ def process_plan():
 
     data = {}
     totals = {}
+    # 연간 계획은 **'연간' 컬럼이 정본**이다.
+    # 월별은 배분 계획이라 납부 시점이 몰리는 항목(세금과공과 등)에서 연간과 어긋난다.
+    #   예: 세금과공과 연간 17,385,270 vs 월별 합 14,298,002
+    # → 연간계획·사용률은 annual, 계획비(YTD 대비)는 월별을 쓴다.
+    annual = {}
+    annual_totals = {}
     unmapped_units, unmapped_cats = set(), set()
 
     for _, row in df.iterrows():
@@ -2364,6 +2410,17 @@ def process_plan():
                 data.setdefault(unit, {}).setdefault(mapped, {})
                 data[unit][mapped][ym] = data[unit][mapped].get(ym, 0.0) + amount
 
+        year_amount = (
+            num(row.get(annual_col))
+            if annual_col
+            else sum(num(row.get(c)) for c in month_cols)
+        )
+        if year_amount:
+            annual_totals[unit] = annual_totals.get(unit, 0.0) + year_amount
+            if mapped:
+                annual.setdefault(unit, {})
+                annual[unit][mapped] = annual[unit].get(mapped, 0.0) + year_amount
+
     months = sorted({ym for ymap in totals.values() for ym in ymap})
     result = {
         "metadata": {
@@ -2373,15 +2430,22 @@ def process_plan():
             "unmappedCategories": sorted(c for c in unmapped_cats if PLAN_CATEGORY_MAP.get(c) is None),
             "unmappedUnits": sorted(unmapped_units),
         },
+        # 월별 배분 (계획비 = YTD 실적 / YTD 계획 에 쓴다)
         "total": {u: {ym: round(v) for ym, v in sorted(m.items())} for u, m in totals.items()},
         "data": {
             u: {c: {ym: round(v) for ym, v in sorted(m.items())} for c, m in cats.items()}
             for u, cats in data.items()
         },
+        # 연간 정본 (연간계획·진척률·사용률에 쓴다)
+        "annual": {u: {c: round(v) for c, v in cats.items()} for u, cats in annual.items()},
+        "annualTotal": {u: round(v) for u, v in annual_totals.items()},
     }
 
     for u in sorted(totals):
-        print(f"  - {u}: 대분류 {len(data.get(u, {}))}종 / 연간 {sum(totals[u].values())/1e6:,.1f}백만")
+        monthly_sum = sum(totals[u].values())
+        year_sum = annual_totals.get(u, 0)
+        gap = "" if abs(year_sum - monthly_sum) < 1 else f" (월별 합 {monthly_sum/1e6:,.1f}백만 — 배분 차이)"
+        print(f"  - {u}: 대분류 {len(data.get(u, {}))}종 / 연간 {year_sum/1e6:,.1f}백만{gap}")
     if result['metadata']['unmappedCategories']:
         print(f"  [주의] 관리식 대분류에 대응 없음(총액만 반영): {', '.join(result['metadata']['unmappedCategories'])}")
 
