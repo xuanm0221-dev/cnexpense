@@ -94,14 +94,71 @@ const SUB_LABEL_PREFIXES = [
   '지급수수료_',
 ];
 
+/**
+ * 구성 라벨의 계층 구분자. 전처리가 `IT수수료 › CN SAP` 처럼 붙여 보내면
+ * 화면에서 이 기호로 잘라 2단 트리(그룹 → 항목)로 그린다.
+ */
+export const SUB_LEVEL_SEP = ' › ';
+
+/**
+ * 계층 라벨의 **마지막 조각**만 꺼낸다.
+ * `지급수수료 › Supply Chain › 창고 이전 비용` → `창고 이전 비용`
+ * 상위 이름은 트리의 부모 줄에 이미 있으니 자식 줄에서 반복하지 않는다.
+ */
+export function leafSubLabel(label: string): string {
+  const i = label.lastIndexOf(SUB_LEVEL_SEP);
+  return i < 0 ? label : label.slice(i + SUB_LEVEL_SEP.length);
+}
+
+/** 구성 트리 한 마디 */
+export interface SubNode {
+  /** 이 마디에 보여줄 이름 */
+  name: string;
+  /** 잎이면 원래 구성 라벨 (금액 조회용), 가지면 null */
+  label: string | null;
+  /** 이 마디에 속한 모든 잎 라벨 — 가지의 합계를 낼 때 쓴다 */
+  leaves: string[];
+  children: SubNode[];
+}
+
+/**
+ * `IT수수료 › CN SAP › 연간 유지보수비용` 같은 라벨을 트리로 접는다.
+ * 깊이는 라벨이 정한다 — 소분류가 없는 가지는 중분류에서 끝난다.
+ * 순서는 넘어온 정렬(금액순)을 그대로 지킨다.
+ */
+export function buildSubTree(labels: string[]): SubNode[] {
+  const roots: SubNode[] = [];
+  const index = new Map<string, SubNode>();
+
+  for (const full of labels) {
+    const parts = full.split(SUB_LEVEL_SEP);
+    let siblings = roots;
+    let path = '';
+    parts.forEach((part, depth) => {
+      path = path ? `${path}${SUB_LEVEL_SEP}${part}` : part;
+      let node = index.get(path);
+      if (!node) {
+        node = { name: part, label: null, leaves: [], children: [] };
+        index.set(path, node);
+        siblings.push(node);
+      }
+      node.leaves.push(full);
+      if (depth === parts.length - 1) node.label = full;
+      siblings = node.children;
+    });
+  }
+  return roots;
+}
+
 export function shortSubLabel(label: string): string {
+  const leaf = leafSubLabel(label);
   for (const prefix of SUB_LABEL_PREFIXES) {
-    if (label.startsWith(prefix)) {
-      const rest = label.slice(prefix.length);
+    if (leaf.startsWith(prefix)) {
+      const rest = leaf.slice(prefix.length);
       if (rest) return rest;
     }
   }
-  return label;
+  return leaf;
 }
 
 /** 표시 기간에 금액이 있는 구성만, 절대값 큰 순 */

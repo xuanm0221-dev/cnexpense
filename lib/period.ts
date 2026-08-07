@@ -191,6 +191,38 @@ export function periodValue(
  * 인원수 기준 — 스톡이라 누적/분기 모두 **평균**.
  * 당월=해당 월, YTD=1월~선택월 평균, 분기=분기 3개월 평균 (값 있는 월만)
  */
+/**
+ * 기간 **누적** 인원수 (월별 인원의 합).
+ *
+ * '인당 비용' 분모로 쓴다. 누적 비용을 평균 인원으로 나누면 개월수만큼 부풀려지므로
+ * (6개월 인건비 ÷ 1개월치 인원), 분자·분모의 기간을 맞추려면 인원도 월별로 더해야 한다.
+ * 결과는 '한 사람이 한 달에 쓴 금액' 이 된다.
+ *
+ * 인원수 표시·증감에는 평균(headcountForPeriod)을 그대로 쓴다 — 인원은 스톡값이라
+ * 합계로 보여주면 의미가 없다.
+ */
+export function headcountSumForPeriod(
+  monthly: MonthlyAmounts | null | undefined,
+  period: Period
+): number | null {
+  if (!monthly) return null;
+  if (period.viewMode === '당월') {
+    const v = monthly[period.endMonth];
+    return v != null ? v : null;
+  }
+  const months = period.months.length > 0 ? period.months : ytdMonths(period.endMonth);
+  let total = 0;
+  let count = 0;
+  for (const m of months) {
+    const v = monthly[m];
+    if (v != null) {
+      total += v;
+      count += 1;
+    }
+  }
+  return count > 0 ? total : null;
+}
+
 export function headcountForPeriod(
   monthly: MonthlyAmounts | null | undefined,
   period: Period

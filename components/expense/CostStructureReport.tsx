@@ -29,6 +29,20 @@ interface AdBrandRow {
   yoy: number | null;
 }
 
+interface DriverItem {
+  item: string;
+  kind: string;
+  amount: number;
+  amountPy: number;
+  isNew: boolean;
+}
+
+interface CategoryDrivers {
+  category: string;
+  top: DriverItem[];
+  ended: { item: string; amountPy: number }[];
+}
+
 interface CostReport {
   year: number;
   month: number;
@@ -69,6 +83,8 @@ interface CostReport {
     labor: string;
     conclusion: string;
   };
+  /** 적요에서 뽑은 '무엇에 썼나' — 광고비·지급수수료만 */
+  drivers?: CategoryDrivers[];
   salesError: string | null;
   error?: string;
 }
@@ -367,6 +383,38 @@ export default function CostStructureReport({ year, month, costType }: CostStruc
                         <b>효율 진단</b>: {d.commentary.adEff}
                       </Bullet>
                     )}
+                    {/*
+                      적요에서 뽑은 실제 집행 건 — 증감률만으로는 '무엇에 썼는지'가 안 보인다.
+                      전처리가 광고비·지급수수료만 만들어 주므로 나머지 대분류에는 안 붙는다.
+                    */}
+                    {(() => {
+                      const dr = d.drivers?.find(x => x.category === row.cost_lv1);
+                      if (!dr || dr.top.length === 0) return null;
+                      return (
+                        <>
+                          <Bullet>
+                            <b>주요 집행</b>:{' '}
+                            {dr.top.map((t, di) => (
+                              <span key={t.item}>
+                                {di > 0 && ' · '}
+                                {t.item} <b>{fK(t.amount)}</b>
+                                {t.isNew ? (
+                                  <span className="text-blue-700"> (신규)</span>
+                                ) : (
+                                  <span className="text-gray-500"> (전년 {fK(t.amountPy)})</span>
+                                )}
+                              </span>
+                            ))}
+                          </Bullet>
+                          {dr.ended.length > 0 && (
+                            <Bullet className="text-gray-600">
+                              <b>전년 대비 종료</b>:{' '}
+                              {dr.ended.map(e => `${e.item} ${fK(e.amountPy)}`).join(' · ')}
+                            </Bullet>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </SubSection>
               </div>

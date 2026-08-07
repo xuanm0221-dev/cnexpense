@@ -31,7 +31,7 @@ import {
 } from '@/utils/formatters';
 import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
 import { fromMonthly, periodCny, periodValue, type Period } from '@/lib/period';
-import { shortSubLabel, sortSubLabels, type SubLevels } from '@/lib/account-analysis';
+import { buildSubTree, shortSubLabel, sortSubLabels, type SubNode, type SubLevels } from '@/lib/account-analysis';
 
 const SALARY_SUB_LABELS = ['기본급', '성과급', 'Red Pack', '외주/PT', '퇴직급여', '미정'] as const;
 
@@ -47,6 +47,9 @@ const GRID_COLS_BASE = 'md:grid-cols-[minmax(6rem,1.5fr)_1fr_1fr_0.85fr]';
  * 연간계획·진척률까지 보이는 배치 (관리식 + 누적(YTD) 일 때만).
  * 컬럼이 늘어난 만큼 대분류 칸을 줄여 좌우가 자동으로 맞춰지게 fr 로 잡는다.
  */
+/** 실적(YoY)과 계획 구간을 가르는 세로선 — 성격이 다른 두 묶음이라 눈으로 끊어준다 */
+const PLAN_DIVIDER = 'md:border-l md:border-slate-300 md:pl-2 lg:pl-3';
+
 const GRID_COLS_WITH_PLAN = 'md:grid-cols-[minmax(5.5rem,1.35fr)_1fr_1fr_0.8fr_1fr_0.8fr]';
 
 /** 모바일: 세로 스택 / 데스크톱: 그리드 */
@@ -279,6 +282,20 @@ export default function CostTypeTabs({
   const rowGridClass = rowGridClassFor(withPrevColumn, withPlanColumns);
 
   /**
+   * 구성 트리에서 **3단째(소분류)** 는 접어 둔다.
+   * 대분류를 펼치면 `IT수수료/지급수수료 → 중분류` 까지만 보이고,
+   * 그 아래는 중분류를 눌러야 나온다 — 한 번에 다 펴면 표가 너무 길어진다.
+   */
+  const [deepOpen, setDeepOpen] = useState<Set<string>>(new Set());
+  const toggleDeep = (key: string) =>
+    setDeepOpen(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  /**
    * 진척률 판단 기준선 — 기준월까지 지난 비율 (6월이면 6/12 = 50%).
    * 연간 계획을 균등하게 쓴다고 보고, 이 선을 넘으면 과집행으로 본다.
    */
@@ -475,7 +492,7 @@ export default function CostTypeTabs({
             <div className="text-right whitespace-nowrap">YoY</div>
             {withPlanColumns && (
               <>
-                <div className="text-right whitespace-nowrap">연간계획</div>
+                <div className={`text-right whitespace-nowrap ${PLAN_DIVIDER}`}>연간계획</div>
                 <div className="text-right whitespace-nowrap">
                   진척률
                   <span className="ml-1 font-normal text-slate-400">
@@ -547,7 +564,7 @@ export default function CostTypeTabs({
                 </div>
                 {withPlanColumns && (
                   <>
-                    <div className={metricCellClass}>
+                    <div className={`${metricCellClass} ${PLAN_DIVIDER}`}>
                       <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
                         연간계획
                       </span>
@@ -673,7 +690,7 @@ export default function CostTypeTabs({
                     const progress = planYear && amount != null ? (amount / planYear) * 100 : null;
                     return (
                       <>
-                        <div className={metricCellClass}>
+                        <div className={`${metricCellClass} ${PLAN_DIVIDER}`}>
                           <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">
                             연간계획
                           </span>
@@ -705,7 +722,105 @@ export default function CostTypeTabs({
                 </div>
                 {showSubToggle && subOpen && (
                   <div className="ml-2 sm:ml-4 md:ml-5 mt-1 space-y-1 pl-2 sm:pl-3 mb-1.5 sm:mb-2">
-                    {subLabels.map((label) => {
+                    {(() => {
+                      /** 가지 행 — 하위 잎들의 합계 (예: IT수수료 / CN SAP) */
+                      const branchRow = (
+                        node: SubNode,
+                        depth: number,
+                        toggle?: { open: boolean; onClick: () => void }
+                      ) => {
+                        let sum = 0;
+                        let prev = 0;
+                        for (const l of node.leaves) {
+                          const acc = fromMonthly(subLevels?.[category]?.[l] ?? {});
+                          sum += periodValue(acc, period, currency, exchangeRates) ?? 0;
+                          prev += periodValue(acc, prevPeriod, currency, exchangeRates) ?? 0;
+                        }
+                        const idx = yoyIndex(sum, prev);
+                        const delta = prev === 0 ? null : formatDelta(sum, prev, currency);
+                        return (
+                          <div
+                            className={`${rowGridClass} ${
+                              depth === 0
+                                ? 'bg-slate-100/70 border-b border-slate-300'
+                                : 'bg-slate-50/70 border-b border-slate-200'
+                            }`}
+                          >
+                            <div
+                              className={`min-w-0 leading-snug text-[11px] sm:text-xs ${
+                                depth === 0 ? 'font-semibold text-slate-800' : 'font-medium text-slate-700'
+                              }`}
+                              style={{ paddingLeft: depth * 12 }}
+                            >
+                              {node.name}
+                              {/* 펼침 표시는 이름 뒤에 붙되 줄바꿈을 유발하지 않게 최소 크기로 */}
+                              {toggle && (
+                                <button
+                                  type="button"
+                                  onClick={toggle.onClick}
+                                  aria-expanded={toggle.open}
+                                  title={`${toggle.open ? '접기' : '펼치기'} · 하위 ${node.children.length}개`}
+                                  className="ml-1 shrink-0 align-middle text-[11px] leading-none font-semibold text-slate-400 hover:text-slate-800"
+                                >
+                                  {toggle.open ? '−' : '+'}
+                                </button>
+                              )}
+                            </div>
+                            <div className={metricCellClass}>
+                              <span className="text-right tabular-nums text-slate-700">
+                                {formatAmount(sum, currency)}
+                              </span>
+                            </div>
+                            {withPrevColumn && <div className={metricCellClass} />}
+                            <div className={metricCellClass}>
+                              <span className="text-right tabular-nums text-slate-600">
+                                {delta ?? <span className="text-gray-400">—</span>}
+                              </span>
+                            </div>
+                            <div className={metricCellClass}>
+                              <div className="text-right">
+                                {idx === null ? (
+                                  <span className="text-gray-400">N/A</span>
+                                ) : (
+                                  <span className={idx >= 100 ? 'text-red-600' : 'text-blue-600'}>
+                                    {idx}%
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {withPlanColumns && (
+                              <>
+                                <div className={`${metricCellClass} ${PLAN_DIVIDER}`} />
+                                <div className={metricCellClass} />
+                              </>
+                            )}
+                          </div>
+                        );
+                      };
+
+                      const renderNodes = (nodes: SubNode[], depth: number): React.ReactNode =>
+                        nodes.map((node) => {
+                          // depth 0(IT/지급) 은 항상 펼침, depth 1(중분류) 부터는 눌러야 열린다
+                          const collapsible = depth >= 1 && node.children.length > 0;
+                          const key = `${category}|${node.leaves[0]}|${depth}`;
+                          const open = !collapsible || deepOpen.has(key);
+                          return (
+                          <div key={key}>
+                            {/* 자식이 있으면 합계 줄, 없으면 상세 줄 */}
+                            {node.children.length > 0 ? (
+                              <>
+                                {branchRow(
+                                  node,
+                                  depth,
+                                  collapsible
+                                    ? { open, onClick: () => toggleDeep(key) }
+                                    : undefined
+                                )}
+                                {open && renderNodes(node.children, depth + 1)}
+                              </>
+                            ) : (
+                              <div>
+{node.leaves.slice(0, 1).map((label) => {
                       const subMonthly = subLevels?.[category]?.[label] ?? {};
                       const acc = fromMonthly(subMonthly);
                       const cur = periodValue(acc, period, currency, exchangeRates);
@@ -722,8 +837,11 @@ export default function CostTypeTabs({
                           : null;
                       return (
                         <div key={label} className={rowGridClass}>
-                          <div className="break-words text-gray-600 pl-0 md:pl-1 min-w-0 leading-snug text-[10px] sm:text-[11px] md:text-xs">
-                            ㄴ {shortSubLabel(label)}
+                          <div
+                            className="break-words text-gray-600 min-w-0 leading-snug text-[10px] sm:text-[11px] md:text-xs"
+                            style={{ paddingLeft: depth * 12 }}
+                          >
+                            {shortSubLabel(label)}
                           </div>
                           <div className={metricCellClass}>
                             <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">금액</span>
@@ -768,6 +886,14 @@ export default function CostTypeTabs({
                         </div>
                       );
                     })}
+                              </div>
+                            )}
+                          </div>
+                          );
+                        });
+
+                      return renderNodes(buildSubTree(subLabels), 0);
+                    })()}
                   </div>
                 )}
               </div>

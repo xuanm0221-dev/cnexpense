@@ -20,6 +20,7 @@ import {
   fromCategoryData,
   fromMonthly,
   headcountForPeriod,
+  headcountSumForPeriod,
   periodCny,
   periodValue,
   previousYearPeriod,
@@ -136,6 +137,24 @@ export default function BusinessUnitCard({
     () => headcountForPeriod(storeHeadcountData, period),
     [storeHeadcountData, period]
   );
+  /** '인당' 분모 — 기간 누적 인원 (누적 비용과 기간을 맞춘다) */
+  const officeSum = useMemo(
+    () => headcountSumForPeriod(officeHeadcountData, period),
+    [officeHeadcountData, period]
+  );
+  const storeSum = useMemo(
+    () => headcountSumForPeriod(storeHeadcountData, period),
+    [storeHeadcountData, period]
+  );
+  const officeSumPrev = useMemo(
+    () => headcountSumForPeriod(officeHeadcountData, prevPeriod),
+    [officeHeadcountData, prevPeriod]
+  );
+  const storeSumPrev = useMemo(
+    () => headcountSumForPeriod(storeHeadcountData, prevPeriod),
+    [storeHeadcountData, prevPeriod]
+  );
+
   const officeBasisPrev = useMemo(
     () => headcountForPeriod(officeHeadcountData, prevPeriod),
     [officeHeadcountData, prevPeriod]
@@ -202,15 +221,15 @@ export default function BusinessUnitCard({
   const headcountDelta = (curr: number | null, prev: number | null) =>
     curr === null || prev === null || prev === 0 ? null : Math.round(curr - prev);
 
-  /** '인당' 분모 */
+  /** '인당' 분모 — 누적 인원 (당월이면 그 달 인원) */
   const salarySubPerPersonDenominator = useMemo(
-    () => basisForTab(officeBasis, storeBasis, activeTab) ?? 0,
-    [activeTab, officeBasis, storeBasis]
+    () => basisForTab(officeSum, storeSum, activeTab) ?? 0,
+    [activeTab, officeSum, storeSum]
   );
-  /** 전년 동기간 인원 — 하위 행 '전년 인당' 분모 */
+  /** 전년 동기간 누적 인원 — 하위 행 '전년 인당' 분모 */
   const salarySubPerPersonDenominatorPrev = useMemo(
-    () => basisForTab(officeBasisPrev, storeBasisPrev, activeTab) ?? 0,
-    [activeTab, officeBasisPrev, storeBasisPrev]
+    () => basisForTab(officeSumPrev, storeSumPrev, activeTab) ?? 0,
+    [activeTab, officeSumPrev, storeSumPrev]
   );
 
   // 인원수 YoY (전년 동기간 기준 동일 규칙)
@@ -246,7 +265,7 @@ export default function BusinessUnitCard({
 
   // 전년 동기간 인당 인건비 — 분모는 전년 인원
   const salaryPerPersonPrev = useMemo(() => {
-    const prevDenom = basisForTab(officeBasisPrev, storeBasisPrev, activeTab) ?? 0;
+    const prevDenom = salarySubPerPersonDenominatorPrev;
     if (prevDenom === 0) return null;
     const amount = periodValue(salaryAccessor, prevPeriod, currency, exchangeRates);
     return amount === null ? null : amount / prevDenom;
@@ -255,9 +274,7 @@ export default function BusinessUnitCard({
     prevPeriod,
     currency,
     exchangeRates,
-    activeTab,
-    officeBasisPrev,
-    storeBasisPrev,
+    salarySubPerPersonDenominatorPrev,
   ]);
   
   // 인당 복리비 — 재무식에는 복리비가 별도 연결계정과목으로 없고 '기타'에 포함 → 표시 안 함
@@ -272,7 +289,7 @@ export default function BusinessUnitCard({
 
   const welfarePerPerson = useMemo(() => {
     if (isFinancial) return null;
-    const denom = basisForTab(officeBasis, storeBasis, activeTab) ?? 0;
+    const denom = salarySubPerPersonDenominator;
     if (denom <= 0) return null;
     const amount = periodValue(welfareAccessor, period, currency, exchangeRates);
     return amount === null ? null : amount / denom;
@@ -290,7 +307,7 @@ export default function BusinessUnitCard({
   // 전년 동기간 인당 복리비 — 분모는 전년 인원
   const welfarePerPersonPrev = useMemo(() => {
     if (isFinancial) return null;
-    const prevDenom = basisForTab(officeBasisPrev, storeBasisPrev, activeTab) ?? 0;
+    const prevDenom = salarySubPerPersonDenominatorPrev;
     if (prevDenom === 0) return null;
     const amount = periodValue(welfareAccessor, prevPeriod, currency, exchangeRates);
     return amount === null ? null : amount / prevDenom;
@@ -300,9 +317,7 @@ export default function BusinessUnitCard({
     prevPeriod,
     currency,
     exchangeRates,
-    activeTab,
-    officeBasisPrev,
-    storeBasisPrev,
+    salarySubPerPersonDenominatorPrev,
   ]);
 
   /** 리테일 매출은 항상 위안 원본 — 통화 환산은 표시 시점에 기간 규칙으로 처리 */

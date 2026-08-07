@@ -25,6 +25,107 @@ import { CORPORATE_RETAIL_UNIT, RETAIL_BRAND_IDS } from '@/lib/retail-brands';
 import { isAnalysisUnit } from '@/lib/expense-dash-adapter';
 import type { CostType } from '@/lib/types';
 
+/** 변동 원인 (적요 기반) — 광고비·지급수수료만 전처리에서 만든다 */
+interface DriverRow {
+  ym: string;
+  unit: string;
+  side: CostType;
+  category: string;
+  item: string;
+  kind: string;
+  amount: number;
+}
+
+interface DriverFile {
+  metadata: { categories: string[] };
+  rows: DriverRow[];
+}
+
+export interface DriverItem {
+  item: string;
+  kind: string;
+  amount: number;
+  amountPy: number;
+  /** 전년에 없던 건 */
+  isNew: boolean;
+}
+
+export interface CategoryDrivers {
+  category: string;
+  /** 당기 금액 상위 */
+  top: DriverItem[];
+  /** 전년엔 있었으나 올해 사라진 건 */
+  ended: { item: string; amountPy: number }[];
+}
+
+/** 보고서에 보여줄 건 수 */
+const DRIVER_TOP_N = 5;
+const DRIVER_ENDED_N = 3;
+
+async function loadDrivers(): Promise<DriverFile | null> {
+  try {
+    const mod = await import('@/data/processed/cost-drivers.json');
+    return mod.default as unknown as DriverFile;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 대분류별 '무엇에 썼나'.
+ * 광고비는 계상·환입이 섞여 전년비 증감이 흔들리므로, **당기 금액 상위**와
+ * **신규/종료** 로 본다 — 이쪽이 원인 설명에 더 안정적이다.
+ */
+function buildDrivers(
+  file: DriverFile | null,
+  year: number,
+  month: number,
+  costType: CostType
+): CategoryDrivers[] {
+  if (!file) return [];
+  const inPeriod = (ym: string, y: number) => {
+    const [yy, mm] = ym.split('-').map(Number);
+    return yy === y && mm <= month;
+  };
+
+  const out: CategoryDrivers[] = [];
+  for (const category of file.metadata.categories) {
+    const cy = new Map<string, { amount: number; kind: string }>();
+    const py = new Map<string, number>();
+    for (const r of file.rows) {
+      if (r.category !== category) continue;
+      if (costType !== '전체' && r.side !== costType) continue;
+      if (inPeriod(r.ym, year)) {
+        const cur = cy.get(r.item);
+        cy.set(r.item, { amount: (cur?.amount ?? 0) + r.amount, kind: cur?.kind ?? r.kind });
+      } else if (inPeriod(r.ym, year - 1)) {
+        py.set(r.item, (py.get(r.item) ?? 0) + r.amount);
+      }
+    }
+
+    const top = [...cy.entries()]
+      .filter(([, v]) => v.amount > 0)
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .slice(0, DRIVER_TOP_N)
+      .map(([item, v]) => ({
+        item,
+        kind: v.kind,
+        amount: v.amount,
+        amountPy: py.get(item) ?? 0,
+        isNew: (py.get(item) ?? 0) === 0,
+      }));
+
+    const ended = [...py.entries()]
+      .filter(([item, v]) => v > 0 && !(cy.get(item)?.amount ?? 0))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, DRIVER_ENDED_N)
+      .map(([item, amountPy]) => ({ item, amountPy }));
+
+    if (top.length || ended.length) out.push({ category, top, ended });
+  }
+  return out;
+}
+
 /** 인당 인건비를 낼 대분류 — 마스터의 대분류 명칭. 없으면 인당 지표를 생략한다 */
 const LABOR_CATEGORY = '급여';
 
@@ -71,7 +172,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { queries, salesError } = await loadExpenseData(costType);
+    const [{ queries, salesError }, driverFile] = await Promise.all([
+      loadExpenseData(costType),
+      loadDrivers(),
+    ]);
     const corp = CORPORATE_RETAIL_UNIT;
 
     // ── KPI (법인 YTD) ──────────────────────────────────────────
@@ -215,6 +319,7 @@ export async function GET(request: NextRequest) {
           }
         : null,
       commentary,
+      drivers: buildDrivers(driverFile, year, month, costType),
       salesError,
     });
   } catch (err: any) {
