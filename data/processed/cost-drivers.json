@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "generatedAt": "2026-08-07T14:49:44.217021",
+    "generatedAt": "2026-08-10T17:49:34.738233",
     "months": [
       "2025-01",
       "2025-02",
@@ -19,7 +19,8 @@
       "2026-03",
       "2026-04",
       "2026-05",
-      "2026-06"
+      "2026-06",
+      "2026-07"
     ],
     "categories": [
       "광고비",
@@ -22395,6 +22396,1104 @@
       "item": "임직원 상해보험",
       "kind": "환입",
       "amount": -613503
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "1차 계약 발효 후10영업일세금계산서 발행 金额200万",
+      "kind": "지출",
+      "amount": 1886792
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "2차 第一次촬영前10영업일세금계산서 발행 金额200万 第一",
+      "kind": "지출",
+      "amount": 1886792
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "D26 101 Female BA H2 Shooting",
+      "kind": "지출",
+      "amount": -350000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "D26 102 Female BA Celebrity Fee H2",
+      "kind": "지출",
+      "amount": -500000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "D26 303 WJ Campaign",
+      "kind": "지출",
+      "amount": 1050000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "D26 403 In store support activitiy +DP",
+      "kind": "지출",
+      "amount": -184081
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "DX男연예인 홍보비张凌赫",
+      "kind": "지출",
+      "amount": -3773585
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "DX男연예인 홍보비檀健次2608",
+      "kind": "지출",
+      "amount": -943396
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "Discovery Bazaar연예인촬영植入 李思潼 《",
+      "kind": "지출",
+      "amount": 100000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "Discovery 女전속모델계약비용第三 四期付대금 合同",
+      "kind": "지출",
+      "amount": 943396
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "discovery ~ 品牌全球전속모델檀健",
+      "kind": "지출",
+      "amount": 2830189
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "연예인 홍보비陈丽君",
+      "kind": "상각",
+      "amount": 314465
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "연예인 홍보비陈丽君",
+      "kind": "지출",
+      "amount": -943396
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "영업비",
+      "category": "급여",
+      "item": "인건비",
+      "kind": "계상",
+      "amount": 1098449
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.6월분DX TP운영비",
+      "kind": "환입",
+      "amount": -174419
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.7월분DX TP운영비",
+      "kind": "계상",
+      "amount": 112537
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "DISCOVERY 티몰 运营서비스비",
+      "kind": "지출",
+      "amount": 173909
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "지출",
+      "amount": 103702
+    },
+    {
+      "ym": "2026-07",
+      "unit": "Discovery",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "환입",
+      "amount": -103842
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "1차 合同签订5영업일세금계산서 발행 55万；",
+      "kind": "지출",
+      "amount": 518868
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "2차 第一次촬영5영업일内세금계산서 발행 55万；",
+      "kind": "지출",
+      "amount": 518868
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 107 MEDIA AGENCY FEE",
+      "kind": "지출",
+      "amount": 721671
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 107 Media Agency Fee incl. KIDS",
+      "kind": "지출",
+      "amount": -721671
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 112 SEM FEE",
+      "kind": "지출",
+      "amount": 1566461
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 113 BRANDZONE",
+      "kind": "지출",
+      "amount": 196529
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 115 PR Agency Fee incl.",
+      "kind": "지출",
+      "amount": 122642
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 115 PR Agency Fee incl. MLB & KIDS S",
+      "kind": "지출",
+      "amount": -1130000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 116 Social Agency Fee",
+      "kind": "지출",
+      "amount": -400000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 116 Social Agency Fee 全平",
+      "kind": "지출",
+      "amount": 300000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 117 Influencer Marketing",
+      "kind": "지출",
+      "amount": -540000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 117 MLB Influencer Marke",
+      "kind": "지출",
+      "amount": 540000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 204 26SS SHOES CAMPAIGN",
+      "kind": "지출",
+      "amount": 804570
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 204 SHOES CAMPAIGN MEDIA",
+      "kind": "지출",
+      "amount": 7695432
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 205 CAP MEDIA FEE",
+      "kind": "지출",
+      "amount": 957086
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 205 SP 25 Cap &shoes",
+      "kind": "지출",
+      "amount": -6513846
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 207 SU 25 Vintage & street Tshirt + ",
+      "kind": "지출",
+      "amount": -8230153
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "A26 304 Brand campaign offli",
+      "kind": "지출",
+      "amount": 2238172
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "MLB연예인章若楠(연예인)홍보비1차",
+      "kind": "지출",
+      "amount": 353774
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "code A26 207 A26 208 A26",
+      "kind": "지출",
+      "amount": 8941927
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "사용26 2 A26 205 MLB BRAND MKT",
+      "kind": "지출",
+      "amount": 599940
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "연예인 홍보비汪苏泷(연예인)",
+      "kind": "지출",
+      "amount": 550314
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "프로젝트CODE A26 209 BRAND MKT AP",
+      "kind": "지출",
+      "amount": 1687559
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "프로젝트已交付 一次性付清",
+      "kind": "지출",
+      "amount": 267462
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "영업비",
+      "category": "급여",
+      "item": "인건비",
+      "kind": "계상",
+      "amount": 4484645
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.5월분Douyin MLB TP운영비",
+      "kind": "환입",
+      "amount": -1463700
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.6월분Douyin APP TP운영비",
+      "kind": "환입",
+      "amount": -371522
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.6월분Douyin MLB TP운영비",
+      "kind": "환입",
+      "amount": -973417
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.6월분JD MLB TP운영비",
+      "kind": "환입",
+      "amount": -188399
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.6월분MLB TP운영비",
+      "kind": "환입",
+      "amount": -2313078
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.6월분위챗몰TP운영비",
+      "kind": "환입",
+      "amount": -255000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.7월분Douyin APP TP운영비",
+      "kind": "계상",
+      "amount": 223273
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.7월분Douyin MLB TP운영비",
+      "kind": "계상",
+      "amount": 643491
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.7월분MLB TP운영비",
+      "kind": "계상",
+      "amount": 924891
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.7월분MLB TP운영비변동",
+      "kind": "계상",
+      "amount": 231223
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.7월분위챗몰TP운영비",
+      "kind": "계상",
+      "amount": 255000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "6월TP커미션MLBJD플래그십스토어 19 위안；",
+      "kind": "지출",
+      "amount": 188349
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "6월TP커미션MLBVIP닷컴 28 위안；",
+      "kind": "지출",
+      "amount": 265579
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "6월TP커미션MLB티몰매장 2 444 286.96 위안；",
+      "kind": "지출",
+      "amount": 2305931
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "6월TP커미션위챗몰서비스비 270 300.00위안 含社",
+      "kind": "지출",
+      "amount": 255000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "MLB틱톡官旗5월TP커미션155 위안",
+      "kind": "지출",
+      "amount": 1463019
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "MLB틱톡신발·의류 플래그십6월TP커미션103 위안",
+      "kind": "지출",
+      "amount": 972730
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "MLB틱톡의류플래그십스토어6월TP커미션39 위안",
+      "kind": "지출",
+      "amount": 371057
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "VIP닷컴TP대행운영비 4.5%",
+      "kind": "계상",
+      "amount": 219982
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "VIP닷컴TP대행운영비 4.5%",
+      "kind": "환입",
+      "amount": -244756
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "26년7월MLBJD플래그십스토어 징준통(JD광고)프로모션비",
+      "kind": "계상",
+      "amount": 180460
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "6월MLB알리페이비용정산 타오바오커",
+      "kind": "지출",
+      "amount": 460795
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "6월MLB알리페이비용정산 타오바오커",
+      "kind": "환입",
+      "amount": -493874
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "7월MLB알리페이비용정산 쥐화솬(티몰)",
+      "kind": "계상",
+      "amount": 168348
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "7월틱톡MLB공식 플래그십스토어광고비",
+      "kind": "계상",
+      "amount": 334559
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "MLB 7월완샹타이(티몰광고)",
+      "kind": "계상",
+      "amount": 936561
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "MLB틱톡의류플래그십스토어광고비",
+      "kind": "계상",
+      "amount": 114200
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "TMALL MLB 7월百灵topbrand",
+      "kind": "계상",
+      "amount": 283019
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "이커머스팀 티몰핀샤오바오(티몰광고)비용Funing",
+      "kind": "상각",
+      "amount": 876591
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "급여",
+      "item": "노무비",
+      "kind": "환입",
+      "amount": -100000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "계상",
+      "amount": 2206941
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "지출",
+      "amount": 2438195
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "환입",
+      "amount": -2408096
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "지급수수료",
+      "item": "6월티몰집행서비스비",
+      "kind": "환입",
+      "amount": -136599
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "지급수수료",
+      "item": "MLB집행公司월费6.1 6.30",
+      "kind": "지출",
+      "amount": 128867
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "지급수수료",
+      "item": "ML空调清洗费",
+      "kind": "환입",
+      "amount": -100800
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLBJD플래그십스토어钱包 백화점 수수료커미션",
+      "kind": "지출",
+      "amount": 156925
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 代扣리베이트",
+      "kind": "지출",
+      "amount": 194757
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 代扣리베이트",
+      "kind": "환입",
+      "amount": -194757
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 基础软件서비스비",
+      "kind": "지출",
+      "amount": 243648
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 基础软件서비스비",
+      "kind": "환입",
+      "amount": -217336
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 반품운임보험(타오바오)",
+      "kind": "지출",
+      "amount": 406239
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 반품운임보험(타오바오)",
+      "kind": "환입",
+      "amount": -406239
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 티몰커미션",
+      "kind": "지출",
+      "amount": 1954408
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월MLB알리페이비용정산 티몰커미션",
+      "kind": "환입",
+      "amount": -1954408
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월틱톡MLB플래그십스토어비용정산 틱톡백화점 수수료",
+      "kind": "환입",
+      "amount": -301824
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "7월MLB알리페이비용정산 반품운임보험(타오바오)",
+      "kind": "계상",
+      "amount": 206997
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "7월MLB알리페이비용정산 티몰커미션",
+      "kind": "계상",
+      "amount": 763821
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "7월틱톡MLB플래그십스토어비용정산 틱톡백화점 수수료",
+      "kind": "계상",
+      "amount": 141022
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "MM VIP닷컴JITXPlatform ADJ",
+      "kind": "지출",
+      "amount": 1050420
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "MM 티몰플래그십스토어Platform ADJ",
+      "kind": "지출",
+      "amount": -114360
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "세금계산서 수취 26년6월MLBJD플래그십스토어钱包 백화점 수수료커미션",
+      "kind": "환입",
+      "amount": -156925
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "세금계산서 수취 6월틱톡MLB플래그십스토어비용정산 틱톡백화점 수수료",
+      "kind": "지출",
+      "amount": 301824
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "26 104 MLBKIDS 26 WJ Infl",
+      "kind": "지출",
+      "amount": 700000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "K26 102 KIDS Social Agency F",
+      "kind": "지출",
+      "amount": 130000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "K26 102 Social Agency Fee",
+      "kind": "지출",
+      "amount": -130000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "K26 105 SP TS Comms. Incl. Adaptation",
+      "kind": "지출",
+      "amount": -1294369
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "K26 111 Instore activity SELECTED STORE",
+      "kind": "지출",
+      "amount": -102377
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "K26 112 Standard Store Openings GWP all",
+      "kind": "지출",
+      "amount": -300000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "광고비",
+      "item": "MLBKIDS CAMPAIGN MED",
+      "kind": "지출",
+      "amount": 1294369
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "급여",
+      "item": "인건비",
+      "kind": "계상",
+      "amount": 689358
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "영업비",
+      "category": "급여",
+      "item": "퇴직급여",
+      "kind": "계상",
+      "amount": 345076
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "26.6월분KIDS TP운영비",
+      "kind": "환입",
+      "amount": -235622
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "TP수수료",
+      "item": "6월TP커미션MLBKIDS티몰매장 24 위안",
+      "kind": "지출",
+      "amount": 234932
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "광고비",
+      "item": "KIDS 7월완샹타이(티몰광고)",
+      "kind": "계상",
+      "amount": 205172
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "계상",
+      "amount": 428986
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "지출",
+      "amount": 453052
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "급여",
+      "item": "인건비_직영점",
+      "kind": "환입",
+      "amount": -461000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월KIDS알리페이비용정산 티몰커미션",
+      "kind": "지출",
+      "amount": 147461
+    },
+    {
+      "ym": "2026-07",
+      "unit": "MLB KIDS",
+      "side": "직접비",
+      "category": "플랫폼수수료",
+      "item": "6월KIDS알리페이비용정산 티몰커미션",
+      "kind": "환입",
+      "amount": -147461
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "급여",
+      "item": "노무비",
+      "kind": "지출",
+      "amount": 110984
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "급여",
+      "item": "인건비",
+      "kind": "계상",
+      "amount": 2486043
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "지급수수료",
+      "item": "4월물류费 SF익스프레스",
+      "kind": "환입",
+      "amount": 426638
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "지급수수료",
+      "item": "4월창고 이전 서비스비SF",
+      "kind": "환입",
+      "amount": -586443
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "지급수수료",
+      "item": "AI Agent 平台搭建",
+      "kind": "계상",
+      "amount": 100000
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "지급수수료",
+      "item": "SAP license",
+      "kind": "상각",
+      "amount": 286651
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "지급수수료",
+      "item": "SF익스프레스창고 이전창고보관费 MLB 비용",
+      "kind": "지출",
+      "amount": 397161
+    },
+    {
+      "ym": "2026-07",
+      "unit": "경영지원",
+      "side": "영업비",
+      "category": "지급수수료",
+      "item": "猎头招聘",
+      "kind": "계상",
+      "amount": 279385
     }
   ]
 }
