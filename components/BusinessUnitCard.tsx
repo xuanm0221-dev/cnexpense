@@ -72,6 +72,9 @@ interface BusinessUnitCardProps {
   estimatedCategories?: Set<string>;
 }
 
+/** '인당' 지표로 쓰는 급여 중분류 — 전처리의 급여중분류 버킷 명칭 */
+const BASE_PAY_SUB = '기본급';
+
 /** 탭별 인원 기준값 (직접비=매장, 영업비=사무실, 전체=합) */
 function basisForTab(
   office: number | null,
@@ -244,18 +247,24 @@ export default function BusinessUnitCard({
     return currentCount - prevCount;
   }, [activeTab, officeBasis, storeBasis, officeBasisPrev, storeBasisPrev]);
 
-  /** 인건비(급여) 접근자 — 재무식은 연결계정과목 '인건비' */
+  /**
+   * 인당 지표의 분자 — **영업비만 기본급**, 직접비·전체는 급여 전체.
+   * 사무실 급여는 중분류가 있어 상여·퇴직급여 같은 시기성 항목을 걷어낼 수 있지만,
+   * 매장 급여는 중분류로 안 나뉘어(전부 '미정') 기본급만 뽑을 수가 없다.
+   * 재무식은 연결계정과목 '인건비'.
+   */
+  const useBasePay = !isFinancial && activeTab === '영업비';
   const salaryAccessor = useMemo(() => {
     if (isFinancial) return fromMonthly(financialCosts['인건비']);
+    if (activeTab === '영업비') return fromMonthly(data.급여중분류?.영업비?.[BASE_PAY_SUB]);
     if (activeTab === '직접비') return fromMonthly(data.직접비['급여']);
-    if (activeTab === '영업비') return fromMonthly(data.영업비['급여']);
     return combineAccessors(
       fromMonthly(data.직접비['급여']),
       fromMonthly(data.영업비['급여'])
     );
   }, [isFinancial, financialCosts, activeTab, data]);
 
-  // 인당 인건비 (기간 비용 ÷ 기간 인원)
+  // 인당 기본급(영업비) / 인당 인건비 (기간 비용 ÷ 기간 인원)
   const salaryPerPerson = useMemo(() => {
     const denom = salarySubPerPersonDenominator;
     if (denom <= 0) return null;
@@ -263,7 +272,7 @@ export default function BusinessUnitCard({
     return amount === null ? null : amount / denom;
   }, [salaryAccessor, period, currency, exchangeRates, salarySubPerPersonDenominator]);
 
-  // 전년 동기간 인당 인건비 — 분모는 전년 인원
+  // 전년 동기간 — 분모는 전년 인원
   const salaryPerPersonPrev = useMemo(() => {
     const prevDenom = salarySubPerPersonDenominatorPrev;
     if (prevDenom === 0) return null;
@@ -631,13 +640,13 @@ export default function BusinessUnitCard({
           </div>
         </div>
         
-        {/* 인당 인건비 / 인당 복리비 — 재무식은 인원 기준이 섞여 있어 표시하지 않는다 */}
+        {/* 인당 기본급(영업비)·인당 인건비 / 인당 복리비 — 재무식은 인원 기준이 섞여 있어 표시하지 않는다 */}
         {!isFinancial && (
         <div
           className="grid grid-cols-2 gap-2 sm:gap-4 mb-3 sm:mb-4 text-xs sm:text-sm rounded-xl border border-slate-200/70 bg-white/80 px-3 py-2.5 shadow-sm shadow-slate-200/40"
         >
           <div>
-            <div className="text-gray-500">인당 인건비</div>
+            <div className="text-gray-500">{useBasePay ? '인당 기본급' : '인당 인건비'}</div>
             <div className="font-semibold text-gray-800">
               {salaryPerPerson !== null && salaryPerPerson !== undefined
                 ? (
