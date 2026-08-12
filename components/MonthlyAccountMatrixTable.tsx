@@ -127,11 +127,16 @@ export default function MonthlyAccountMatrixTable({
       if (!hasData) continue;
       out.push({
         label: `${q}분기`,
-        period: buildPeriod(`${year}-${String(q * 3).padStart(2, '0')}`, `${q}분기` as ViewMode),
+        // 기준월을 cap 으로 넘겨 진행 중인 분기를 잘라낸다 (전년 비교를 동기간으로 맞춤)
+        period: buildPeriod(
+          `${year}-${String(q * 3).padStart(2, '0')}`,
+          `${q}분기` as ViewMode,
+          selectedMonth
+        ),
       });
     }
     return out;
-  }, [months, year]);
+  }, [months, year, selectedMonth]);
 
   const categoryData = useMemo(
     () => selectCategoryData(costs, costBasis, activeTab),

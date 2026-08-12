@@ -7,6 +7,9 @@
  *   3분기 = YTD(9월) − YTD(6월)
  *   4분기 = YTD(12월) − YTD(9월)
  *
+ * 진행 중인 분기는 기준월까지만 잡는다. 7월까지만 있는 3분기는 YTD(7월) − YTD(6월)이고,
+ * 전년도 같은 식으로 YTD(전년7월) − YTD(전년6월) 이라 7월 대 7월로 비교된다.
+ *
  * 원화(KRW)도 분기 환율을 따로 쓰지 않고 **누적 원화끼리 차감**한다.
  *   2분기 KRW = YTD(6월)CNY × 기간평균(6월) − YTD(3월)CNY × 기간평균(3월)
  * 이렇게 해야 분기 합계가 누적(YTD) 원화와 정확히 일치한다.
@@ -51,18 +54,32 @@ function monthKey(year: string, m: number): string {
   return `${year}-${String(m).padStart(2, '0')}`;
 }
 
-export function buildPeriod(selectedMonth: string, viewMode: ViewMode): Period {
+/**
+ * @param capMonth 이 달 이후는 기간에 넣지 않는다. 기본값은 selectedMonth.
+ *   진행 중인 분기(7월까지만 있는 3분기)를 7월로 잘라, 전년 비교가 7~9월이 아니라
+ *   **7월 대 7월**이 되게 한다. previousYearPeriod 가 잘린 월을 그대로 전년으로 옮긴다.
+ */
+export function buildPeriod(
+  selectedMonth: string,
+  viewMode: ViewMode,
+  capMonth?: string
+): Period {
   const year = (selectedMonth || '').split('-')[0] || '';
 
   if (isQuarterView(viewMode)) {
     const q = quarterNumber(viewMode);
     const nums = quarterMonthNumbers(q);
+    const all = nums.map(m => monthKey(year, m));
+    const cap = capMonth || selectedMonth;
+    // 분기 전체가 기준월 이후면(아직 시작 안 한 분기) 자르지 않는다 —
+    // 그대로 둬야 periodHasData 가 '데이터 없음'으로 판정해 탭이 잠긴다.
+    const months = cap && all[0] <= cap ? all.filter(m => m <= cap) : all;
     return {
       viewMode,
       year,
-      endMonth: monthKey(year, nums[2]),
+      endMonth: months[months.length - 1],
       baseMonth: q > 1 ? monthKey(year, nums[0] - 1) : null,
-      months: nums.map(m => monthKey(year, m)),
+      months,
     };
   }
 
