@@ -201,11 +201,12 @@ export default function HomePage() {
   /**
    * 카드 폭 — 계획 컬럼이 붙는 누적(YTD)·관리식에서는 넓게.
    * 우측 패널은 flex-1 이라 여기서 줄인 만큼 자동으로 넓어진다.
+   * 전년금액 컬럼이 생겨 기본 5열·계획 7열이 되었으므로 그만큼 넓혔다.
    */
   const cardWidthClass =
     costBasis === '관리식' && viewMode === '누적(YTD)' && activeTab === '영업비' && annualPlan
-      ? 'lg:w-[32rem] xl:w-[38rem]'
-      : 'lg:w-[24rem] xl:w-[27rem]';
+      ? 'lg:w-[35rem] xl:w-[41rem]'
+      : 'lg:w-[27rem] xl:w-[31rem]';
 
 
   // 조회 기간 (당월 / 누적 / 분기)

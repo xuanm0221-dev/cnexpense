@@ -39,7 +39,7 @@ const WELFARE_L2_ORDER = ['보험/공적금', '주재원', '현지직원'] as co
 
 /**
  * 컬럼 폭 — 첫 컬럼(대분류/연결계정과목)이 두 줄로 접히지 않도록 넉넉히 잡는다.
- * 재무식(전년금액 포함)은 5열, 관리식은 4열.
+ * 기본 5열(대분류·금액·전년금액·YOY금액·YoY), 계획이 붙으면 7열.
  */
 const GRID_COLS_WITH_PREV = 'md:grid-cols-[minmax(6.5rem,1.6fr)_1fr_1fr_1fr_0.85fr]';
 const GRID_COLS_BASE = 'md:grid-cols-[minmax(6rem,1.5fr)_1fr_1fr_0.85fr]';
@@ -51,15 +51,30 @@ const GRID_COLS_BASE = 'md:grid-cols-[minmax(6rem,1.5fr)_1fr_1fr_0.85fr]';
 const PLAN_DIVIDER = 'md:border-l md:border-slate-300 md:pl-2 lg:pl-3';
 
 const GRID_COLS_WITH_PLAN = 'md:grid-cols-[minmax(5.5rem,1.35fr)_1fr_1fr_0.8fr_1fr_0.8fr]';
+/** 전년금액 + 계획까지 다 붙은 7열 */
+const GRID_COLS_WITH_PREV_PLAN =
+  'md:grid-cols-[minmax(4.5rem,1.1fr)_1fr_1fr_1fr_0.7fr_1fr_0.7fr]';
+
+/** 컬럼 구성에 맞는 그리드 */
+const gridColsFor = (withPrev: boolean, withPlan: boolean) =>
+  withPrev && withPlan
+    ? GRID_COLS_WITH_PREV_PLAN
+    : withPrev
+      ? GRID_COLS_WITH_PREV
+      : withPlan
+        ? GRID_COLS_WITH_PLAN
+        : GRID_COLS_BASE;
 
 /** 모바일: 세로 스택 / 데스크톱: 그리드 */
 const rowGridClassFor = (withPrev: boolean, withPlan = false) =>
-  `p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid ${
-    withPrev ? GRID_COLS_WITH_PREV : withPlan ? GRID_COLS_WITH_PLAN : GRID_COLS_BASE
-  } md:gap-2 lg:gap-3 md:items-center hover:bg-slate-50/70 transition-colors text-xs sm:text-sm`;
+  `p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid ${gridColsFor(
+    withPrev,
+    withPlan
+  )} md:gap-2 lg:gap-3 md:items-center hover:bg-slate-50/70 transition-colors text-xs sm:text-sm`;
 
+/** 금액 칸 — 데스크톱에서 숫자가 줄바꿈돼 두 줄로 밀리지 않게 nowrap */
 const metricCellClass =
-  'flex justify-between items-baseline gap-2 md:block md:text-right tabular-nums';
+  'flex justify-between items-baseline gap-2 md:block md:text-right md:whitespace-nowrap tabular-nums';
 
 const subRowGridClass =
   'p-2 sm:p-3 space-y-1.5 sm:space-y-2 md:space-y-0 md:grid md:grid-cols-4 md:gap-3 lg:gap-4 md:items-center text-[11px] sm:text-xs md:text-sm border-b border-dotted border-slate-200/80';
@@ -222,8 +237,8 @@ export default function CostTypeTabs({
   prevPeriod,
 }: CostTypeTabsProps) {
   const isFinancial = costBasis === '재무식';
-  /** 재무식은 전년 금액 컬럼을 항상 표시 */
-  const withPrevColumn = isFinancial;
+  /** 전년 금액 컬럼 — 관리식·재무식 모두 표시 (YoY 지수만으론 규모를 못 읽는다) */
+  const withPrevColumn = true;
   /** 하위 구성 정렬·표시 판단에 쓸 월 (조회 기간 기준) */
   const subMonths = useMemo(() => {
     if (period.months.length > 0) return period.months;
@@ -477,13 +492,10 @@ export default function CostTypeTabs({
       ) : (
         <div className="min-h-0 md:rounded-xl md:border md:border-slate-200/75 md:bg-slate-50/55 shadow-sm shadow-slate-200/30">
           <div
-            className={`hidden md:grid ${
-              withPrevColumn
-                ? GRID_COLS_WITH_PREV
-                : withPlanColumns
-                  ? GRID_COLS_WITH_PLAN
-                  : GRID_COLS_BASE
-            } md:gap-2 lg:gap-3 sticky top-0 z-10 px-2 sm:px-3 py-2 mb-2 text-xs text-slate-500 font-semibold border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-sm`}
+            className={`hidden md:grid ${gridColsFor(
+              withPrevColumn,
+              withPlanColumns
+            )} md:gap-2 lg:gap-3 sticky top-0 z-10 px-2 sm:px-3 py-2 mb-2 text-xs text-slate-500 font-semibold border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur-sm`}
           >
             <div className="whitespace-nowrap">{isFinancial ? '연결계정과목' : '대분류'}</div>
             <div className="text-right whitespace-nowrap">금액</div>
@@ -771,7 +783,13 @@ export default function CostTypeTabs({
                                 {formatAmount(sum, currency)}
                               </span>
                             </div>
-                            {withPrevColumn && <div className={metricCellClass} />}
+                            {withPrevColumn && (
+                              <div className={metricCellClass}>
+                                <span className="text-right tabular-nums text-slate-500">
+                                  {formatAmount(prev, currency)}
+                                </span>
+                              </div>
+                            )}
                             <div className={metricCellClass}>
                               <span className="text-right tabular-nums text-slate-600">
                                 {delta ?? <span className="text-gray-400">—</span>}

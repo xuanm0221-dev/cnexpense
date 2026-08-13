@@ -25,6 +25,8 @@ COST_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/비용파일")
 HEADCOUNT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/사무실인원수")
 HEADCOUNT_STORE_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/매장인원수")
 ADJUSTMENT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/조정분개")
+# 원장에 없는 금액을 사람이 채워 넣는 곳 (연월·사업부·G/L 계정·금액·비고)
+MANUAL_ADJUST_DIR = Path("D:/로컬파일/비용대시보드파일/수기보정")
 # 거래처(BP) 마스터 — 장부의 '상계 계정' 과 같은 코드 체계
 BP_MASTER_FILE = Path("D:/로컬파일/비용대시보드파일/BP.XLSX")
 # 마스터는 **로컬 원천 폴더 한 곳**에서만 읽는다 (비용파일·조정분개와 같은 폴더).
@@ -1440,6 +1442,124 @@ def load_cost_files(existing_months=None):
     print(f"  기간: {min(months)} ~ {max(months)}")
     
     return combined_df, sorted(months)
+
+
+def apply_manual_adjustments(df, months, cost_center_master):
+    """
+    원장에 없는 금액을 수기 보정 CSV 에서 읽어 **원장 행처럼** 덧붙인다.
+
+    회계 처리가 중간에 바뀌어 과거 기간이 통째로 비는 경우가 있다.
+    (예: VIP 플랫폼수수료 — 96030105 계정을 2025-06 에 신설해 그 이전이 없다)
+    이런 건 규칙으로 복원할 수 없어 사람이 숫자를 줄 수밖에 없다.
+
+    보정 행을 만들어 원장에 섞으면 대분류·하위레벨·직접/영업·재무식 제외 여부가
+    **기존 마스터 조인 로직 그대로** 결정된다. 여기에 분류 규칙을 새로 두지 않는다.
+
+    코스트 센터는 그 계정이 실제로 쓰던 것을 원장에서 찾아 따라간다.
+    (조정 전표는 조정계정(-) ↔ 매장(+) 한 쌍인데, 조정계정은 영업/직접이 'X' 라
+     집계에서 빠진다. 그래서 집계에 실제로 들어가는 **양수 레그만** 만든다.)
+    """
+    if not MANUAL_ADJUST_DIR.exists():
+        return df
+
+    files = sorted(p for p in MANUAL_ADJUST_DIR.glob("*.csv") if not p.name.startswith("~$"))
+    if not files:
+        return df
+
+    need = {'연월', '사업부', 'G/L 계정', '금액'}
+    parts = []
+    for p in files:
+        try:
+            m = pd.read_csv(p, encoding='utf-8-sig', dtype=str)
+        except Exception as e:
+            print(f"  [수기보정] {p.name} 읽기 실패 — 스킵: {e}")
+            continue
+        m.columns = m.columns.str.strip()
+        missing = need - set(m.columns)
+        if missing:
+            print(f"  [수기보정] {p.name} 컬럼 부족 {sorted(missing)} — 스킵")
+            continue
+        m['출처파일'] = p.name
+        parts.append(m)
+
+    if not parts:
+        return df
+
+    man = pd.concat(parts, ignore_index=True)
+    for c in ('연월', '사업부', 'G/L 계정'):
+        man[c] = man[c].fillna('').astype(str).str.strip()
+    man['금액'] = pd.to_numeric(man['금액'].astype(str).str.replace(',', ''), errors='coerce')
+    man = man[man['금액'].notna() & (man['금액'] != 0)]
+
+    # 이번 실행에서 처리하는 월만 (증분 실행에서 과거 월이 중복으로 붙는 걸 막는다)
+    in_scope = man[man['연월'].isin(set(months))]
+    skipped = len(man) - len(in_scope)
+    if skipped:
+        print(f"  [수기보정] 처리 범위 밖 {skipped}행 건너뜀")
+    if in_scope.empty:
+        return df
+
+    # (G/L, 사업부) → 원장에서 그 계정이 실제로 쓰는 코스트센터 (양수 레그 최빈값)
+    amt = pd.to_numeric(df['금액(전표 통화)'].astype(str).str.replace(',', ''), errors='coerce')
+    bu_of_cc = dict(
+        zip(
+            cost_center_master['코스트 센터'].fillna('').astype(str).str.strip(),
+            cost_center_master['사업부'].fillna('').astype(str).str.strip(),
+        )
+    )
+    real = df.assign(
+        _금액=amt,
+        _cc=df['코스트 센터'].fillna('').astype(str).str.strip(),
+        _gl=df['G/L 계정'].fillna('').astype(str).str.strip(),
+    )
+    real = real[(real['_금액'] > 0) & (real['_cc'] != '')]
+    real['_bu'] = real['_cc'].map(bu_of_cc)
+    cc_pick = (
+        real.groupby(['_gl', '_bu'])['_cc']
+        .agg(lambda s: s.value_counts().idxmax())
+        .to_dict()
+    )
+    # 하위레벨 규칙(GL_GROUP 등)이 'G/L 계정 설명' 을 보므로 원장에서 같이 가져온다
+    gl_desc = (
+        df.assign(_gl=df['G/L 계정'].fillna('').astype(str).str.strip())
+        .dropna(subset=['G/L 계정 설명'])
+        .groupby('_gl')['G/L 계정 설명']
+        .agg(lambda s: s.value_counts().idxmax())
+        .to_dict()
+    )
+
+    made, unresolved = [], []
+    for _, r in in_scope.iterrows():
+        cc = cc_pick.get((r['G/L 계정'], r['사업부']))
+        if not cc:
+            unresolved.append((r['연월'], r['사업부'], r['G/L 계정']))
+            continue
+        made.append({
+            '연월': r['연월'],
+            '코스트 센터': cc,
+            'G/L 계정': r['G/L 계정'],
+            # 원장 CSV 는 전부 문자열로 읽힌다. 정제 단계가 .str 로 콤마를 떼므로
+            # 숫자로 넣으면 그 행만 NaN 이 되어 조용히 사라진다.
+            '금액(전표 통화)': f"{r['금액']:.2f}",
+            'G/L 계정 설명': gl_desc.get(r['G/L 계정'], ''),
+            '전표 유형': 'SA',
+            '텍스트': str(r.get('비고') or '수기보정'),
+        })
+
+    if unresolved:
+        print(f"  [수기보정] 코스트센터를 못 찾아 제외 {len(unresolved)}행: {unresolved[:4]}")
+    if not made:
+        return df
+
+    add = pd.DataFrame(made)
+    # 금액은 원장 형식(문자열)로 넣었으므로 요약은 숫자 원본에서 낸다
+    summary = in_scope[in_scope['G/L 계정'].isin(add['G/L 계정'])]
+    print(f"  [수기보정] {len(add)}행 / {summary['금액'].sum():,.0f} 위안 추가 "
+          f"({', '.join(p.name for p in files)})")
+    for gl, r in summary.groupby('G/L 계정')['금액'].agg(['sum', 'count']).iterrows():
+        print(f"     {gl}: {r['sum']:,.0f} ({int(r['count'])}행)")
+
+    return pd.concat([df, add], ignore_index=True)
 
 
 def clean_and_filter_data(df):
@@ -2998,6 +3118,9 @@ def main():
         cost_df, months = load_cost_files(existing_months)
         
         if not cost_df.empty:
+            # 2-1. 원장에 없는 금액을 수기 보정으로 채움 (정제 전에 넣어 같은 경로를 타게)
+            cost_df = apply_manual_adjustments(cost_df, months, cost_center_master)
+
             # 3. 데이터 정제
             cost_df = clean_and_filter_data(cost_df)
             
