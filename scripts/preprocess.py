@@ -1507,16 +1507,30 @@ def apply_manual_adjustments(df, months, cost_center_master):
             cost_center_master['사업부'].fillna('').astype(str).str.strip(),
         )
     )
+    side_of_cc = dict(
+        zip(
+            cost_center_master['코스트 센터'].fillna('').astype(str).str.strip(),
+            cost_center_master['영업/직접'].fillna('').astype(str).str.strip(),
+        )
+    )
     real = df.assign(
         _금액=amt,
         _cc=df['코스트 센터'].fillna('').astype(str).str.strip(),
         _gl=df['G/L 계정'].fillna('').astype(str).str.strip(),
     )
-    real = real[(real['_금액'] > 0) & (real['_cc'] != '')]
+    real = real[real['_cc'] != '']
     real['_bu'] = real['_cc'].map(bu_of_cc)
+    # 조정계정(영업/직접='X') 은 집계에서 빠진다. 그런 코스트센터를 고르면
+    # 보정 금액이 조용히 사라지므로 후보에서 제외한다.
+    real = real[real['_cc'].map(side_of_cc).isin(('직접', '영업'))]
+    # 건수가 아니라 **순액**이 가장 큰 코스트센터 — 조정 전표는 계상·환입이 섞여 있어
+    # 건수로 고르면 되돌린 쪽이 뽑힐 수 있다.
+    net = real.groupby(['_gl', '_bu', '_cc'])['_금액'].sum().reset_index()
+    net = net[net['_금액'] > 0]
     cc_pick = (
-        real.groupby(['_gl', '_bu'])['_cc']
-        .agg(lambda s: s.value_counts().idxmax())
+        net.sort_values('_금액', ascending=False)
+        .groupby(['_gl', '_bu'])['_cc']
+        .first()
         .to_dict()
     )
     # 하위레벨 규칙(GL_GROUP 등)이 'G/L 계정 설명' 을 보므로 원장에서 같이 가져온다
