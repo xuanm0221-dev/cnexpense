@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "build:static": "node scripts/build-static.mjs",
-    "data:retail": "node scripts/fetch-retail-sales.mjs"
+    "data:retail": "node scripts/fetch-retail-sales.mjs",
+    "data": "python scripts/preprocess.py --full && npm run data:retail"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.18",

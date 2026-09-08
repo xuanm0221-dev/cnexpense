@@ -251,6 +251,17 @@ export interface PlanData {
   /** 연간 정본 — 연간계획·진척률에 쓴다 (파일의 `연간` 컬럼) */
   annual: Record<string, Record<string, number>>;
   annualTotal: Record<string, number>;
+  /** 기중 조정 계획(중간점검). 파일이 없으면 비어 있다 */
+  annualAdjusted?: Record<string, Record<string, number>>;
+  annualAdjustedTotal?: Record<string, number>;
+}
+
+/** 연간계획을 기존/조정후 중 무엇으로 볼지 */
+export type PlanBasis = 'base' | 'adjusted';
+
+/** 조정후 계획이 실제로 들어와 있는지 (없으면 전환탭을 띄우지 않는다) */
+export function hasAdjustedPlan(plan: PlanData | null): boolean {
+  return Object.keys(plan?.annualAdjusted ?? {}).length > 0;
 }
 
 export async function loadPlanData(): Promise<PlanData | null> {
@@ -271,14 +282,18 @@ export function annualPlanFor(
   plan: PlanData | null,
   unit: string,
   year: number,
-  corporateUnits: readonly string[]
+  corporateUnits: readonly string[],
+  basis: PlanBasis = 'base'
 ): Record<string, number> | null {
   if (!plan) return null;
-  const units = corporateUnits.includes(unit) ? [unit] : Object.keys(plan.annual ?? plan.total);
+  // 조정후를 골랐는데 파일이 없으면 조용히 기존으로 돌아간다
+  const source =
+    basis === 'adjusted' && hasAdjustedPlan(plan) ? plan.annualAdjusted! : plan.annual;
+  const units = corporateUnits.includes(unit) ? [unit] : Object.keys(source ?? plan.total);
   const out: Record<string, number> = {};
   for (const u of units) {
     // 연간 컬럼이 정본. 월별 합은 배분 계획이라 항목에 따라 연간과 어긋날 수 있다
-    for (const [category, v] of Object.entries(plan.annual?.[u] ?? {})) {
+    for (const [category, v] of Object.entries(source?.[u] ?? {})) {
       out[category] = (out[category] ?? 0) + v;
     }
   }

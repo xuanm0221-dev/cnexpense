@@ -35,6 +35,8 @@ import {
   yoyIndex,
 } from '@/utils/formatters';
 import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
+import type { PlanBasis } from '@/lib/data-loader';
+import { CORPORATE_RETAIL_UNIT } from '@/lib/retail-brands';
 import CostTypeTabs from './CostTypeTabs';
 
 interface BusinessUnitCardProps {
@@ -68,6 +70,11 @@ interface BusinessUnitCardProps {
   subLevels?: SubLevels;
   /** 연간 계획 (대분류 → 금액) — 관리식 + 누적(YTD) 에서만 표에 표시 */
   annualPlan?: Record<string, number> | null;
+  /** 연간계획 기준 — 기존 / 조정후(중간점검) */
+  planBasis?: PlanBasis;
+  onPlanBasisChange?: (b: PlanBasis) => void;
+  /** 조정후 계획 파일이 들어와 있는지. 없으면 전환탭을 감춘다 */
+  hasAdjustedPlan?: boolean;
   /** 전년이 적요 추정으로 채워진 대분류 */
   estimatedCategories?: Set<string>;
 }
@@ -106,6 +113,9 @@ export default function BusinessUnitCard({
   onTabChange,
   costBasis = '관리식',
   annualPlan,
+  planBasis = 'base',
+  onPlanBasisChange,
+  hasAdjustedPlan = false,
   unitOptions,
   onUnitChange,
   currency = 'CNY',
@@ -435,6 +445,19 @@ export default function BusinessUnitCard({
     },
   };
   
+  /**
+   * 연간계획 기준 전환탭 노출 조건.
+   * 계획 컬럼이 실제로 보이는 때(관리식·누적·영업비)와 같아야 하고,
+   * 조정후 계획은 법인 기준으로만 검증돼 법인에서만 연다.
+   */
+  const showPlanBasisTabs =
+    !isFinancial &&
+    viewMode === '누적(YTD)' &&
+    activeTab === '영업비' &&
+    id === CORPORATE_RETAIL_UNIT &&
+    hasAdjustedPlan &&
+    !!onPlanBasisChange;
+
   const colors = colorClasses[color as keyof typeof colorClasses] || colorClasses.gray;
   
   return (
@@ -442,7 +465,8 @@ export default function BusinessUnitCard({
       {/* 헤더 (그라데이션) — 상단 모서리만 클립 */}
       <div className={`rounded-t-2xl overflow-hidden bg-gradient-to-r ${colors.gradient} p-4 sm:p-6 text-white shadow-inner`}>
         {unitOptions && onUnitChange ? (
-          <div className="relative mb-3 sm:mb-4 inline-flex items-center">
+          <div className="mb-3 sm:mb-4 flex flex-wrap items-center gap-2">
+          <div className="relative inline-flex items-center">
             <select
               value={id}
               onChange={e => onUnitChange(e.target.value)}
@@ -456,6 +480,33 @@ export default function BusinessUnitCard({
               ))}
             </select>
             <span className="pointer-events-none absolute right-2.5 text-white/80 text-xs">▼</span>
+          </div>
+          {showPlanBasisTabs && (
+            <div
+              role="group"
+              aria-label="연간계획 기준"
+              className="inline-flex rounded-lg border border-white/25 bg-white/10 p-0.5 text-[11px] sm:text-xs font-semibold"
+            >
+              {([
+                ['base', '기존계획'],
+                ['adjusted', '조정후 계획'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onPlanBasisChange?.(value)}
+                  aria-pressed={planBasis === value}
+                  className={`px-2.5 py-1 rounded-md whitespace-nowrap transition-colors ${
+                    planBasis === value
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           </div>
         ) : (
           <h2 className="text-lg sm:text-xl font-bold tracking-[-0.02em] mb-3 sm:mb-4">{name}</h2>

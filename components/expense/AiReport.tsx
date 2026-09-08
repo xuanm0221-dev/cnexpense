@@ -17,6 +17,7 @@ import type {
   SummarySegment,
   SummaryTone,
 } from '@/lib/ai-report-builder';
+import type { PlanBasis } from '@/lib/ai-report-builder';
 import type { CostType } from '@/lib/types';
 
 const k = (v: number | null | undefined) =>
@@ -291,9 +292,17 @@ export interface AiReportProps {
   month: number;
   mode: ReportMode;
   costType: CostType;
+  /** 연간계획 기준 — 좌측 카드의 '기존계획 | 조정후 계획' 전환탭을 따라간다 */
+  planBasis?: PlanBasis;
 }
 
-export default function AiReport({ year, month, mode, costType }: AiReportProps) {
+export default function AiReport({
+  year,
+  month,
+  mode,
+  costType,
+  planBasis = 'base',
+}: AiReportProps) {
   const [d, setD] = useState<AiReportData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -302,7 +311,13 @@ export default function AiReport({ year, month, mode, costType }: AiReportProps)
     let alive = true;
     setLoading(true);
     setError(null);
-    const qs = new URLSearchParams({ year: String(year), month: String(month), mode, costType });
+    const qs = new URLSearchParams({
+      year: String(year),
+      month: String(month),
+      mode,
+      costType,
+      planBasis,
+    });
     fetch(`/api/ai-report?${qs}`)
       .then(r => r.json())
       .then(j => {
@@ -315,7 +330,7 @@ export default function AiReport({ year, month, mode, costType }: AiReportProps)
     return () => {
       alive = false;
     };
-  }, [year, month, mode, costType]);
+  }, [year, month, mode, costType, planBasis]);
 
   if (loading) {
     return (

@@ -9,7 +9,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { loadExpenseData } from '@/lib/expense-dash-server';
-import { buildAiReport, type PlanData, type ReportMode } from '@/lib/ai-report-builder';
+import {
+  buildAiReport,
+  type PlanBasis,
+  type PlanData,
+  type ReportMode,
+} from '@/lib/ai-report-builder';
 import type { CostType } from '@/lib/types';
 
 /** 계획(예산) — 전처리 산출물. 없으면 계획 관련 지표를 건너뛴다 */
@@ -31,6 +36,8 @@ export async function GET(request: NextRequest) {
   const month = Number(sp.get('month'));
   const rawMode = sp.get('mode');
   const rawCost = sp.get('costType');
+  // 연간계획 기준 — 화면 전환탭이 넘긴다. 없으면 기존계획
+  const planBasis: PlanBasis = sp.get('planBasis') === 'adjusted' ? 'adjusted' : 'base';
 
   const mode: ReportMode = MODES.includes(rawMode as ReportMode)
     ? (rawMode as ReportMode)
@@ -51,7 +58,7 @@ export async function GET(request: NextRequest) {
       loadExpenseData(costType),
       loadPlan(),
     ]);
-    const report = buildAiReport(queries, { year, month, mode, costType, plan });
+    const report = buildAiReport(queries, { year, month, mode, costType, plan, planBasis });
     if (salesError) report.notes.push(`매출 조회 실패: ${salesError}`);
     return NextResponse.json(report);
   } catch (err: any) {

@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import { Bot, FileText, LineChart } from 'lucide-react';
 import AiReport from './AiReport';
+import type { PlanBasis } from '@/lib/ai-report-builder';
 import CostStructureReport from './CostStructureReport';
 import { AdSalesEfficiencyAnalysis } from './AdSalesEfficiencyAnalysis';
 import { hasExpenseData, setExpenseData } from '@/lib/expense-dash';
@@ -81,6 +82,8 @@ export interface DeepAnalysisPanelProps {
   costType: CostType;
   /** 당월/누적 — AI보고서 집계 모드에 쓴다 */
   viewMode: ViewMode;
+  /** 연간계획 기준 — 좌측 카드 전환탭을 따라간다 */
+  planBasis?: PlanBasis;
 }
 
 export default function DeepAnalysisPanel({
@@ -88,6 +91,7 @@ export default function DeepAnalysisPanel({
   month,
   costType,
   viewMode,
+  planBasis = 'base',
 }: DeepAnalysisPanelProps) {
   const [tab, setTab] = useState<TabKey>('ai');
 
@@ -135,7 +139,13 @@ export default function DeepAnalysisPanel({
       </div>
 
       {tab === 'ai' && (
-        <AiReport year={year} month={monthNum} mode={reportMode} costType={costType} />
+        <AiReport
+          year={year}
+          month={monthNum}
+          mode={reportMode}
+          costType={costType}
+          planBasis={planBasis}
+        />
       )}
       {tab === 'structure' && (
         <CostStructureReport year={year} month={monthNum} costType={costType} />

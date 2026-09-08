@@ -27,6 +27,8 @@ HEADCOUNT_STORE_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/매�
 ADJUSTMENT_FILES_DIR = Path("D:/로컬파일/비용대시보드파일/조정분개")
 # 원장에 없는 금액을 사람이 채워 넣는 곳 (연월·사업부·G/L 계정·금액·비고)
 MANUAL_ADJUST_DIR = Path("D:/로컬파일/비용대시보드파일/수기보정")
+#: 수기 보정으로 만든 행 표시. 금액 집계에는 들어가되 적요 기반 집행 내역에서는 빠진다.
+MANUAL_FLAG_COL = '_수기보정'
 # 거래처(BP) 마스터 — 장부의 '상계 계정' 과 같은 코드 체계
 BP_MASTER_FILE = Path("D:/로컬파일/비용대시보드파일/BP.XLSX")
 # 마스터는 **로컬 원천 폴더 한 곳**에서만 읽는다 (비용파일·조정분개와 같은 폴더).
@@ -53,7 +55,12 @@ PLAN_OUTPUT_FILE = OUTPUT_DIR / "plan.json"
 # 관리식·누적(YTD)·영업비 탭일 때만 계획 컬럼을 붙인다.
 # 사업부·대분류 명칭이 관리식 마스터와 다르다 (cn-report 체계).
 # 숫자가 아니라 **이름 대응**이라 규칙으로 둔다. 여기 없는 이름은 미매핑으로 남겨 로그에 찍는다.
-PLAN_FILE = Path("D:/로컬파일/비용대시보드파일/계획/2026년비용_plan.csv")
+# 계획 파일은 **사람이 관리하는 원본 폴더를 그대로 읽는다**.
+# 복사본을 만들면 로컬에 같은 파일이 둘이 되어 어느 쪽이 정본인지 헷갈린다.
+PLAN_DIR = Path("D:/dashboard/비용대시보드/expense/파일")
+PLAN_FILE = PLAN_DIR / "2026년비용_plan.csv"
+#: 기중 조정 계획(중간점검). 식별 컬럼은 같고 금액이 '2026년 연간 / 조정 / 조정후 예산' 3개.
+PLAN_ADJUSTED_FILE = PLAN_DIR / "2026년비용_plan_중간점검.csv"
 PLAN_UNIT_MAP = {
     'MLB': 'MLB',
     'KIDS': 'MLB KIDS',
@@ -975,6 +982,13 @@ def aggregate_cost_drivers(df):
         )
 
     d = df[df['대분류'].isin(DRIVER_CATEGORIES)].copy()
+    # 수기 보정은 '무엇에 썼나' 가 아니라 장부 보정이다. 적요가 없어 비고가 건 이름으로
+    # 올라오면 집행 내역에 엉뚱한 줄이 생기므로 제외한다 (대분류 합계에는 그대로 남는다).
+    if MANUAL_FLAG_COL in d.columns:
+        manual = d[MANUAL_FLAG_COL].fillna(False).astype(bool)
+        if manual.any():
+            print(f"  - 변동 원인: 수기 보정 {int(manual.sum())}행 제외 (집행 내역 아님)")
+            d = d[~manual]
     if d.empty:
         return pd.DataFrame(
             columns=['연월', '사업부', '비용구분', '대분류', '건', '유형', '금액']
@@ -1558,6 +1572,7 @@ def apply_manual_adjustments(df, months, cost_center_master):
             'G/L 계정 설명': gl_desc.get(r['G/L 계정'], ''),
             '전표 유형': 'SA',
             '텍스트': str(r.get('비고') or '수기보정'),
+            MANUAL_FLAG_COL: True,
         })
 
     if unresolved:
@@ -2985,6 +3000,40 @@ def preprocess_store_headcount():
         traceback.print_exc()
 
 
+def _read_plan_annual(path, amount_col, num):
+    """
+    계획 파일에서 **사업부 × 대분류 연간 금액**만 뽑는다.
+
+    조정후 계획(중간점검)처럼 월별 배분 없이 연간만 있는 파일을 읽으려고 분리했다.
+    사업부·대분류 이름 대응은 기존 계획과 같은 규칙(PLAN_*_MAP)을 쓴다.
+    """
+    annual, totals = {}, {}
+    if not path.exists():
+        print(f"  [건너뜀] {path.name} 없음 — 조정후 계획 미생성")
+        return annual, totals
+
+    df = pd.read_csv(path, encoding='utf-8-sig', dtype=str)
+    df.columns = [str(c).strip() for c in df.columns]
+    col = next((c for c in df.columns if c.strip() == amount_col), None)
+    if col is None:
+        print(f"  [주의] {path.name} 에 '{amount_col}' 컬럼이 없습니다 — 조정후 계획 미생성")
+        return annual, totals
+
+    for _, row in df.iterrows():
+        unit = PLAN_UNIT_MAP.get(str(row.get('사업부구분', '')).strip())
+        if not unit:
+            continue
+        amount = num(row.get(col))
+        if not amount:
+            continue
+        totals[unit] = totals.get(unit, 0.0) + amount
+        mapped = PLAN_CATEGORY_MAP.get(str(row.get('대분류', '')).strip())
+        if mapped:
+            annual.setdefault(unit, {})
+            annual[unit][mapped] = annual[unit].get(mapped, 0.0) + amount
+    return annual, totals
+
+
 def process_plan():
     """계획(예산) CSV → plan.json (사업부 → 대분류 → 연월 → 금액)
 
@@ -3071,6 +3120,11 @@ def process_plan():
                 annual.setdefault(unit, {})
                 annual[unit][mapped] = annual[unit].get(mapped, 0.0) + year_amount
 
+    # ── 조정후 계획 (중간점검) ──────────────────────────────────────────
+    # 식별 컬럼은 기존과 같고 금액만 '조정후 예산' 을 쓴다. 월별 배분은 없어서
+    # 연간만 만든다 — 진척률·사용률이 연간 정본만 쓰므로 그것으로 충분하다.
+    annual_adj, annual_adj_totals = _read_plan_annual(PLAN_ADJUSTED_FILE, '조정후 예산', num)
+
     months = sorted({ym for ymap in totals.values() for ym in ymap})
     result = {
         "metadata": {
@@ -3089,6 +3143,9 @@ def process_plan():
         # 연간 정본 (연간계획·진척률·사용률에 쓴다)
         "annual": {u: {c: round(v) for c, v in cats.items()} for u, cats in annual.items()},
         "annualTotal": {u: round(v) for u, v in annual_totals.items()},
+        # 기중 조정 계획 — 화면의 '조정후 계획' 탭이 쓴다. 없으면 빈 객체.
+        "annualAdjusted": {u: {c: round(v) for c, v in cats.items()} for u, cats in annual_adj.items()},
+        "annualAdjustedTotal": {u: round(v) for u, v in annual_adj_totals.items()},
     }
 
     for u in sorted(totals):
@@ -3096,6 +3153,10 @@ def process_plan():
         year_sum = annual_totals.get(u, 0)
         gap = "" if abs(year_sum - monthly_sum) < 1 else f" (월별 합 {monthly_sum/1e6:,.1f}백만 — 배분 차이)"
         print(f"  - {u}: 대분류 {len(data.get(u, {}))}종 / 연간 {year_sum/1e6:,.1f}백만{gap}")
+    if annual_adj_totals:
+        base = sum(annual_totals.values())
+        adj = sum(annual_adj_totals.values())
+        print(f"  - 조정후 계획: 연간 {adj/1e6:,.1f}백만 (기존 {base/1e6:,.1f}백만, {adj-base:+,.0f})")
     if result['metadata']['unmappedCategories']:
         print(f"  [주의] 관리식 대분류에 대응 없음(총액만 반영): {', '.join(result['metadata']['unmappedCategories'])}")
 

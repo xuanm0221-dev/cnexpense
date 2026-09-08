@@ -35,6 +35,8 @@ export interface AiReportOptions {
   costType: CostType;
   /** 계획(예산). 없으면 계획집행 점수·계획비 체크포인트를 생략한다 */
   plan?: PlanData | null;
+  /** 연간계획 기준 — 화면 전환탭을 따라간다. 조정후 파일이 없으면 기존으로 떨어진다 */
+  planBasis?: PlanBasis;
 }
 
 /**
@@ -182,7 +184,13 @@ export interface PlanData {
   /** 연간 정본 — 연간계획·사용률 (파일의 `연간` 컬럼) */
   annual: Record<string, Record<string, number>>;
   annualTotal: Record<string, number>;
+  /** 기중 조정 계획(중간점검). 파일이 없으면 비어 있다 */
+  annualAdjusted?: Record<string, Record<string, number>>;
+  annualAdjustedTotal?: Record<string, number>;
 }
+
+/** 연간계획을 기존/조정후 중 무엇으로 볼지 — 화면 전환탭과 같은 값 */
+export type PlanBasis = 'base' | 'adjusted';
 
 /** ② 종합 스코어 — 항목별 배점은 원본 보고서와 동일 */
 export interface ScoreItem {
@@ -430,7 +438,7 @@ function contributionPp(
 }
 
 export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): AiReport {
-  const { year, month, mode, costType, plan } = opts;
+  const { year, month, mode, costType, plan, planBasis = 'base' } = opts;
   const corpUnit = CORPORATE_RETAIL_UNIT;
   const notes: string[] = [];
 
@@ -711,6 +719,22 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
     return sum;
   };
 
+  /**
+   * 조정후 계획의 월 배분 배율.
+   *
+   * 중간점검 파일에는 연간 금액만 있고 월별 배분이 없다. 그런데 계획비(YTD 실적 /
+   * YTD 계획)는 월별이 있어야 낼 수 있다. 그래서 **기존 계획의 월 배분 모양을 그대로 두고
+   * 연간 총액만 조정후로 맞춘다** (조정후연간 / 기존연간). 조정이 특정 월에 몰린다면
+   * 실제와 다를 수 있는데, 월별 조정안이 들어오면 그 값을 쓰면 된다.
+   */
+  const adjustRatio = (u: string, category?: string): number => {
+    if (planBasis !== 'adjusted') return 1;
+    const adjusted = category ? plan?.annualAdjusted?.[u]?.[category] : plan?.annualAdjustedTotal?.[u];
+    const base = category ? plan?.annual?.[u]?.[category] : plan?.annualTotal?.[u];
+    if (adjusted == null || !base) return 1;
+    return adjusted / base;
+  };
+
   const planOf = (unit: string, upTo: number, category?: string): number | null => {
     if (!plan) return null;
     let sum = 0;
@@ -718,10 +742,11 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
     for (const u of planUnitsFor(unit)) {
       const src = category ? plan.data[u]?.[category] : plan.total[u];
       if (!src) continue;
+      const ratio = adjustRatio(u, category);
       for (const [ym, v] of Object.entries(src)) {
         const [y, m] = ym.split('-').map(Number);
         if (y !== year || m > upTo) continue;
-        sum += v;
+        sum += v * ratio;
         found = true;
       }
     }
@@ -897,10 +922,15 @@ export function buildAiReport(queries: ExpenseQueries, opts: AiReportOptions): A
   /** 연간 계획 — 파일의 `연간` 컬럼이 정본 (월별 합과 다를 수 있다) */
   const planYearOf = (unit: string, category?: string): number | null => {
     if (!plan) return null;
+    // 조정후를 골랐는데 파일이 없으면 기존 연간으로 돌아간다
+    const useAdjusted =
+      planBasis === 'adjusted' && Object.keys(plan.annualAdjusted ?? {}).length > 0;
+    const byUnit = useAdjusted ? plan.annualAdjusted! : plan.annual;
+    const byTotal = useAdjusted ? plan.annualAdjustedTotal! : plan.annualTotal;
     let sum = 0;
     let found = false;
     for (const u of planUnitsFor(unit)) {
-      const v = category ? plan.annual?.[u]?.[category] : plan.annualTotal?.[u];
+      const v = category ? byUnit?.[u]?.[category] : byTotal?.[u];
       if (v == null) continue;
       sum += v;
       found = true;

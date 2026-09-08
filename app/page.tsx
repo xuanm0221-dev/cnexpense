@@ -70,7 +70,9 @@ import {
   selectableMonths,
   loadPlanData,
   annualPlanFor,
+  hasAdjustedPlan,
   type PlanData,
+  type PlanBasis,
   retailChannelsFor,
   retailMetricsFor,
   toRetailSalesData,
@@ -89,6 +91,8 @@ export default function HomePage() {
   const [retailResponse, setRetailResponse] = useState<RetailSalesResponse | null>(null);
   const [analysisData, setAnalysisData] = useState<AccountAnalysisData | null>(null);
   const [planData, setPlanData] = useState<PlanData | null>(null);
+  /** 연간계획 기준 — 기존 / 조정후(중간점검). 법인·관리식·YTD·영업비 에서만 전환한다 */
+  const [planBasis, setPlanBasis] = useState<PlanBasis>('base');
   const [retailLoading, setRetailLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -195,8 +199,8 @@ export default function HomePage() {
   const annualPlan = useMemo(() => {
     const year = Number(selectedMonth.slice(0, 4));
     if (!Number.isInteger(year)) return null;
-    return annualPlanFor(planData, selectedUnit, year, CORPORATE_BUSINESS_UNIT_IDS);
-  }, [planData, selectedUnit, selectedMonth]);
+    return annualPlanFor(planData, selectedUnit, year, CORPORATE_BUSINESS_UNIT_IDS, planBasis);
+  }, [planData, selectedUnit, selectedMonth, planBasis]);
 
   /**
    * 카드 폭 — 계획 컬럼이 붙는 누적(YTD)·관리식에서는 넓게.
@@ -685,6 +689,9 @@ export default function HomePage() {
                 subLevels={subLevels}
                 estimatedCategories={estimatedCategories}
                 annualPlan={annualPlan}
+                planBasis={planBasis}
+                onPlanBasisChange={setPlanBasis}
+                hasAdjustedPlan={hasAdjustedPlan(planData)}
               />
               </div>
             );
@@ -759,6 +766,7 @@ export default function HomePage() {
                 month={selectedMonth}
                 costType={activeTab}
                 viewMode={viewMode}
+                planBasis={planBasis}
               />
             }
             rows={analysisRows}
