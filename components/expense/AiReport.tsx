@@ -164,7 +164,23 @@ const G_PLAN = 'rgb(254, 252, 232)';
 const G_VERDICT = 'rgb(249, 250, 251)';
 const SEP = '2px solid rgb(209, 213, 219)';
 
-function DetailTable({ rows }: { rows: DetailRow[] }) {
+/** 법인전체 강조 행 배경 — 브랜드 행보다 한 톤 진하게 */
+const G_TOTAL = 'rgb(224, 231, 255)';
+
+/**
+ * @param highlightFirst 첫 행(법인전체)을 강조한다.
+ * @param mergedVerdictNote 브랜드 행들의 최종판정 칸을 하나로 합치고 이 문구를 넣는다.
+ *   브랜드 간 부서 이동이 있으면 브랜드별 판정이 흔들리므로 법인전체 기준으로만 판정한다.
+ */
+function DetailTable({
+  rows,
+  highlightFirst = false,
+  mergedVerdictNote,
+}: {
+  rows: DetailRow[];
+  highlightFirst?: boolean;
+  mergedVerdictNote?: string;
+}) {
   if (rows.length === 0) return null;
   const num = (v: number | null, percent?: boolean) =>
     v == null ? '-' : percent ? `${v.toFixed(2)}%` : Math.round(v / 1000).toLocaleString();
@@ -186,12 +202,18 @@ function DetailTable({ rows }: { rows: DetailRow[] }) {
       {label}
     </th>
   );
-  const td = (v: React.ReactNode, bg: string, sep = false, align: 'left' | 'right' = 'right') => (
+  const td = (
+    v: React.ReactNode,
+    bg: string,
+    sep = false,
+    align: 'left' | 'right' = 'right',
+    emphasized = false
+  ) => (
     <td
-      className="text-[13px] px-2.5 py-1.5 whitespace-nowrap"
+      className={`text-[13px] px-2.5 py-1.5 whitespace-nowrap${emphasized ? ' font-semibold' : ''}`}
       style={{
-        background: bg,
-        color: '#334155',
+        background: emphasized ? G_TOTAL : bg,
+        color: emphasized ? '#1e293b' : '#334155',
         textAlign: align,
         borderBottom: '1px solid #EEF2F6',
         borderRight: '1px solid #EEF2F6',
@@ -244,34 +266,75 @@ function DetailTable({ rows }: { rows: DetailRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map(r => (
+          {rows.map((r, i) => {
+            const em = highlightFirst && i === 0;
+            // 브랜드 행(첫 행 제외)의 판정 칸은 두 번째 행에서 rowSpan 으로 합친다
+            const mergeVerdict = !!mergedVerdictNote && rows.length > 1 && i >= 1;
+            return (
             <tr key={r.label}>
               <td
                 className="text-[13px] px-2.5 py-1.5"
-                style={{ borderBottom: '1px solid #EEF2F6', borderRight: '1px solid #EEF2F6', textAlign: 'left' }}
+                style={{
+                  background: em ? G_TOTAL : undefined,
+                  borderBottom: '1px solid #EEF2F6',
+                  borderRight: '1px solid #EEF2F6',
+                  borderLeft: em ? '3px solid rgb(79, 70, 229)' : undefined,
+                  textAlign: 'left',
+                }}
               >
                 <strong className="font-semibold text-slate-900">{r.label}</strong>
+                {em && (
+                  <span className="ml-1.5 text-[10px] font-semibold text-indigo-700">기준</span>
+                )}
               </td>
-              {td(num(r.monthPy, r.isPercent), G_MONTH, true)}
-              {td(num(r.monthCy, r.isPercent), G_MONTH)}
-              {td(p(r.monthYoy), G_MONTH)}
-              {td(num(r.ytdPy, r.isPercent), G_YTD, true)}
-              {td(num(r.ytdCy, r.isPercent), G_YTD)}
-              {td(p(r.ytdYoy), G_YTD)}
-              {td(num(r.planYtd), G_PLAN, true)}
-              {td(p(r.planPct), G_PLAN)}
-              {td(p(r.usagePct), G_PLAN)}
-              {td(num(r.planYear), G_PLAN)}
-              {td(
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-semibold bg-slate-50 text-slate-700 border border-slate-200">
-                  {r.verdict}
-                </span>,
-                G_VERDICT,
-                true,
-                'left'
+              {td(num(r.monthPy, r.isPercent), G_MONTH, true, 'right', em)}
+              {td(num(r.monthCy, r.isPercent), G_MONTH, false, 'right', em)}
+              {td(p(r.monthYoy), G_MONTH, false, 'right', em)}
+              {td(num(r.ytdPy, r.isPercent), G_YTD, true, 'right', em)}
+              {td(num(r.ytdCy, r.isPercent), G_YTD, false, 'right', em)}
+              {td(p(r.ytdYoy), G_YTD, false, 'right', em)}
+              {td(num(r.planYtd), G_PLAN, true, 'right', em)}
+              {td(p(r.planPct), G_PLAN, false, 'right', em)}
+              {td(p(r.usagePct), G_PLAN, false, 'right', em)}
+              {td(num(r.planYear), G_PLAN, false, 'right', em)}
+              {mergeVerdict ? (
+                i === 1 && (
+                  <td
+                    rowSpan={rows.length - 1}
+                    className="text-[11.5px] px-2.5 py-1.5 align-middle leading-snug"
+                    style={{
+                      background: G_VERDICT,
+                      color: '#475569',
+                      borderBottom: '1px solid #EEF2F6',
+                      borderLeft: SEP,
+                      textAlign: 'left',
+                      maxWidth: '11rem',
+                      whiteSpace: 'normal',
+                    }}
+                  >
+                    {mergedVerdictNote}
+                  </td>
+                )
+              ) : (
+                td(
+                  <span
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-semibold border ${
+                      em
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-slate-50 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    {r.verdict}
+                  </span>,
+                  G_VERDICT,
+                  true,
+                  'left',
+                  em
+                )
               )}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1051,7 +1114,11 @@ export default function AiReport({
             {laborDetail.length > 0 && (
               <>
                 <SubSubTitle>A-2. 인건비 총액 분석</SubSubTitle>
-                <DetailTable rows={laborDetail} />
+                <DetailTable
+                  rows={laborDetail}
+                  highlightFirst
+                  mergedVerdictNote="브랜드 간 부서 이동이 있어 브랜드별로는 판정하지 않음 — 법인전체 기준으로 판정"
+                />
               </>
             )}
 
