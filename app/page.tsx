@@ -100,8 +100,8 @@ export default function HomePage() {
   // 선택된 월 (기본값: 가장 최근 월)
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   
-  // 뷰 모드 (당월 / 누적(YTD))
-  const [viewMode, setViewMode] = useState<ViewMode>('당월');
+  // 뷰 모드 (당월 / 누적(YTD) / 분기) — 진입 시 누적(YTD)
+  const [viewMode, setViewMode] = useState<ViewMode>('누적(YTD)');
   
   // 카드에 표시할 사업부 (드롭다운). '법인'이면 6개 사업부 합산
   const [selectedUnit, setSelectedUnit] = useState<string>(CORPORATE_RETAIL_UNIT);
