@@ -489,7 +489,7 @@ export default function BusinessUnitCard({
             >
               {([
                 ['base', '기존계획'],
-                ['adjusted', '조정후 계획'],
+                ['adjusted', '실제 연간 사용예상'],
               ] as const).map(([value, label]) => (
                 <button
                   key={value}
