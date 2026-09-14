@@ -195,6 +195,21 @@ export default function HomePage() {
       : data.data[selectedUnit];
   }, [data, selectedUnit]);
 
+  /**
+   * 조정후 계획 전환이 **유효한 조합**인지 — 관리식·누적·영업비·법인 + 조정후 파일 존재.
+   * 이 밖의 조합에서는 탭이 감춰지는데, 선택 상태만 남으면 다른 사업부 카드와
+   * AI보고서가 표시 없이 조정후를 쓰게 된다. 그래서 유효하지 않으면 기존으로 되돌린다.
+   */
+  const planBasisActive =
+    costBasis === '관리식' &&
+    viewMode === '누적(YTD)' &&
+    activeTab === '영업비' &&
+    selectedUnit === CORPORATE_RETAIL_UNIT &&
+    hasAdjustedPlan(planData);
+  useEffect(() => {
+    if (!planBasisActive && planBasis !== 'base') setPlanBasis('base');
+  }, [planBasisActive, planBasis]);
+
   /** 선택 사업부의 연간 계획 (대분류 → 금액). 카드 표의 `연간계획·진척률` 컬럼용 */
   const annualPlan = useMemo(() => {
     const year = Number(selectedMonth.slice(0, 4));
