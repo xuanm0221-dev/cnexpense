@@ -349,6 +349,10 @@ def _split_rules():
 FEE_CATEGORY = '지급수수료'
 #: 구성 라벨의 계층 구분자 — 화면에서 이 기호로 잘라 2단 트리로 그린다
 SUB_LEVEL_SEP = ' › '
+#: 하위 구성 아래에 **부서**를 한 단 더 붙일 대분류. 원장의 코스트센터 → 마스터 부서명.
+#: 출장비는 계정(국내/해외)만으로는 누가 썼는지 안 보여서 부서까지 내린다.
+DEPT_SPLIT_CATEGORIES = ('출장비',)
+DEPT_UNKNOWN = '(부서 미지정)'
 FEE_IT = 'IT수수료'
 FEE_NON_IT = '지급수수료'
 FEE_ETC = '기타'
@@ -1074,6 +1078,18 @@ def aggregate_account_analysis(mgmt_df, financial_df_rows):
     aggregate_account_analysis.bp_map = bp_map
     df['_bucket'] = [r[0] for r in resolved]
     df['_추정'] = [r[1] for r in resolved]
+
+    # 부서 단계 — 코스트센터마스터의 부서명을 구성 라벨 뒤에 붙인다 (국내출장비 › 재무)
+    if '부서명' in df.columns:
+        is_dept = df['대분류'].isin(DEPT_SPLIT_CATEGORIES)
+        if is_dept.any():
+            dept = df.loc[is_dept, '부서명'].fillna('').astype(str).str.strip()
+            dept = dept.where(dept != '', DEPT_UNKNOWN)
+            df.loc[is_dept, '_bucket'] = df.loc[is_dept, '_bucket'] + SUB_LEVEL_SEP + dept
+            n_unknown = int((dept == DEPT_UNKNOWN).sum())
+            print(f"  - 부서 단계 추가: {', '.join(DEPT_SPLIT_CATEGORIES)} "
+                  f"{int(is_dept.sum()):,}행 / 부서 {dept.nunique()}종"
+                  + (f" (부서 미지정 {n_unknown}행)" if n_unknown else ""))
 
     mgmt = df.groupby(
         ['연월', '사업부', '_집계비용구분', '대분류', '_bucket'], as_index=False

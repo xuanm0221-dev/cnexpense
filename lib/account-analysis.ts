@@ -138,7 +138,8 @@ export function buildSubTree(labels: string[]): SubNode[] {
       path = path ? `${path}${SUB_LEVEL_SEP}${part}` : part;
       let node = index.get(path);
       if (!node) {
-        node = { name: part, label: null, leaves: [], children: [] };
+        // 잎과 같은 규칙으로 접두어를 뗀다 (여비교통비_국내출장비 → 국내출장비)
+        node = { name: shortSubLabel(part), label: null, leaves: [], children: [] };
         index.set(path, node);
         siblings.push(node);
       }
