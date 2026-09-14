@@ -818,8 +818,13 @@ export default function CostTypeTabs({
 
                       const renderNodes = (nodes: SubNode[], depth: number): React.ReactNode =>
                         nodes.map((node) => {
-                          // depth 0(IT/지급) 은 항상 펼침, depth 1(중분류) 부터는 눌러야 열린다
-                          const collapsible = depth >= 1 && node.children.length > 0;
+                          // depth 0(IT/지급) 은 항상 펼쳐 중분류까지 먼저 보이게 하고,
+                          // depth 1(중분류) 부터는 눌러야 열린다.
+                          // 단, 첫 가지 아래가 곧바로 잎뿐이면(출장비 › 부서) 접어 둔다 —
+                          // 부서 20여 개가 한꺼번에 펼쳐지면 표가 너무 길다.
+                          const leafOnly = node.children.every(c => c.children.length === 0);
+                          const collapsible =
+                            node.children.length > 0 && (depth >= 1 || leafOnly);
                           const key = `${category}|${node.leaves[0]}|${depth}`;
                           const open = !collapsible || deepOpen.has(key);
                           return (
