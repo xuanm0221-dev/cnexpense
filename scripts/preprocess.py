@@ -66,6 +66,8 @@ PLAN_UNIT_MAP = {
     'KIDS': 'MLB KIDS',
     'DISCOVERY': 'Discovery',
     '공통': '경영지원',
+    # 인건비·복리후생비 행은 소분류에 '경영지원' 으로 갈라져 있다 (_plan_unit_of 참고)
+    '경영지원': '경영지원',
 }
 PLAN_CATEGORY_MAP = {
     '인건비': '급여',
@@ -3002,6 +3004,20 @@ def preprocess_store_headcount():
         traceback.print_exc()
 
 
+def _plan_unit_of(row):
+    """
+    계획 행의 사업부.
+
+    인건비·복리후생비는 사업부구분이 'MLB' 로 적혀 있어도 **소분류에 실제 사업부**
+    (MLB / 경영지원) 가 갈라져 있다 — 경영지원 인원이 행정상 MLB 밑에 있어서다.
+    소분류가 사업부 이름이면 그것을 우선하고, 아니면 사업부구분을 쓴다.
+    """
+    sub = str(row.get('소분류', '')).strip()
+    if sub in PLAN_UNIT_MAP:
+        return PLAN_UNIT_MAP[sub]
+    return PLAN_UNIT_MAP.get(str(row.get('사업부구분', '')).strip())
+
+
 def _read_plan_annual(path, amount_col, num):
     """
     계획 파일에서 **사업부 × 대분류 연간 금액**만 뽑는다.
@@ -3022,7 +3038,7 @@ def _read_plan_annual(path, amount_col, num):
         return annual, totals
 
     for _, row in df.iterrows():
-        unit = PLAN_UNIT_MAP.get(str(row.get('사업부구분', '')).strip())
+        unit = _plan_unit_of(row)
         if not unit:
             continue
         amount = num(row.get(col))
@@ -3089,7 +3105,7 @@ def process_plan():
     for _, row in df.iterrows():
         raw_unit = str(row.get('사업부구분', '')).strip()
         raw_cat = str(row.get('대분류', '')).strip()
-        unit = PLAN_UNIT_MAP.get(raw_unit)
+        unit = _plan_unit_of(row)
         if not unit:
             if raw_unit:
                 unmapped_units.add(raw_unit)
