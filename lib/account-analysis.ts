@@ -171,16 +171,33 @@ export function shortSubLabel(label: string): string {
 }
 
 /** 표시 기간에 금액이 있는 구성만, 절대값 큰 순 */
+/**
+ * 표시할 하위 라벨과 순서.
+ *
+ * 당기 **또는 전년 동기간**에 금액이 있으면 남긴다. 당기만 보면 전년에만 있던 항목
+ * (올해 끊긴 계약 등)이 빠져서, 보이는 행들의 YoY금액 합이 상위 행과 안 맞는다.
+ * 정렬은 당기 금액 우선, 같으면 전년 금액.
+ */
 export function sortSubLabels(
   buckets: Record<string, MonthlyAmounts> | undefined,
-  months: string[]
+  months: string[],
+  prevMonths: string[] = []
 ): string[] {
   if (!buckets) return [];
-  const weight = (label: string) =>
-    months.reduce((s, m) => s + Math.abs(buckets[label]?.[m] ?? 0), 0);
+  const weightOver = (label: string, ms: string[]) =>
+    ms.reduce((s, m) => s + Math.abs(buckets[label]?.[m] ?? 0), 0);
+  const cur = new Map<string, number>();
+  const prev = new Map<string, number>();
+  for (const label of Object.keys(buckets)) {
+    cur.set(label, weightOver(label, months));
+    prev.set(label, weightOver(label, prevMonths));
+  }
   return Object.keys(buckets)
-    .filter(label => weight(label) > 0)
-    .sort((a, b) => weight(b) - weight(a));
+    .filter(label => (cur.get(label) ?? 0) > 0 || (prev.get(label) ?? 0) > 0)
+    .sort(
+      (a, b) =>
+        (cur.get(b) ?? 0) - (cur.get(a) ?? 0) || (prev.get(b) ?? 0) - (prev.get(a) ?? 0)
+    );
 }
 
 /** 전년 금액이 적요 추정으로 채워진 계정인지 */

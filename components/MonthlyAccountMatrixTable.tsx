@@ -176,7 +176,13 @@ export default function MonthlyAccountMatrixTable({
   );
 
   const sortSubKeys = useCallback(
-    (subMap: Record<string, MonthlyAmounts>) => sortSubLabels(subMap, months),
+    (subMap: Record<string, MonthlyAmounts>) =>
+      sortSubLabels(
+        subMap,
+        months,
+        // 전년 동월 — 전년에만 있던 항목도 행으로 남긴다
+        months.map(m => `${Number(m.slice(0, 4)) - 1}-${m.slice(5)}`)
+      ),
     [months]
   );
 

@@ -260,6 +260,16 @@ export default function CostTypeTabs({
     }
     return [period.endMonth];
   }, [period, viewMode, selectedMonth]);
+  /** 전년 동기간 월 — 전년에만 있던 하위 항목도 행으로 남겨 YoY금액 합이 맞게 */
+  const subMonthsPrev = useMemo(() => {
+    if (prevPeriod.months.length > 0) return prevPeriod.months;
+    if (viewMode === '누적(YTD)') {
+      const [y, mm] = (prevPeriod.endMonth || '').split('-');
+      const end = parseInt(mm || '0', 10);
+      return Array.from({ length: end }, (_, i) => `${y}-${String(i + 1).padStart(2, '0')}`);
+    }
+    return [prevPeriod.endMonth];
+  }, [prevPeriod, viewMode]);
   const hasDirectCosts = Object.keys(directCosts).length > 0;
   const hasOperatingCosts = Object.keys(operatingCosts).length > 0;
 
@@ -662,7 +672,7 @@ export default function CostTypeTabs({
             const yoyDelta = prevAmount === 0 ? null : formatDelta(amount, prevAmount, currency);
 
             // 계정(G/L) 1차 + 적요 보정 하위 구성 — 관리식·재무식 공통
-            const subLabels = sortSubLabels(subLevels?.[category], subMonths);
+            const subLabels = sortSubLabels(subLevels?.[category], subMonths, subMonthsPrev);
             const showSubToggle = subLabels.length > 1;
             const subOpen = financialExpanded.has(category);
             /** 인당 금액을 같이 보여줄 계정 (인건비 계열) */
