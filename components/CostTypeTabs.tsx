@@ -869,34 +869,9 @@ export default function CostTypeTabs({
                         );
                       };
 
-                      const renderNodes = (nodes: SubNode[], depth: number): React.ReactNode =>
-                        nodes.map((node) => {
-                          // depth 0(IT/지급) 은 항상 펼쳐 중분류까지 먼저 보이게 하고,
-                          // depth 1(중분류) 부터는 눌러야 열린다.
-                          // 단, 첫 가지 아래가 곧바로 잎뿐이면(출장비 › 부서) 접어 둔다 —
-                          // 부서 20여 개가 한꺼번에 펼쳐지면 표가 너무 길다.
-                          const leafOnly = node.children.every(c => c.children.length === 0);
-                          const collapsible =
-                            node.children.length > 0 && (depth >= 1 || leafOnly);
-                          const key = `${category}|${node.leaves[0]}|${depth}`;
-                          const open = !collapsible || deepOpen.has(key);
-                          return (
-                          <div key={key}>
-                            {/* 자식이 있으면 합계 줄, 없으면 상세 줄 */}
-                            {node.children.length > 0 ? (
-                              <>
-                                {branchRow(
-                                  node,
-                                  depth,
-                                  collapsible
-                                    ? { open, onClick: () => toggleDeep(key) }
-                                    : undefined
-                                )}
-                                {open && renderNodes(node.children, depth + 1)}
-                              </>
-                            ) : (
-                              <div>
-{node.leaves.slice(0, 1).map((label) => {
+                      /** 잎(상세) 한 줄. name 을 주면 라벨 대신 그 이름으로 표시 */
+                      const leafRow = (label: string, depth: number, name?: string) => {
+
                       const subMonthly = subLevels?.[category]?.[label] ?? {};
                       const acc = fromMonthly(subMonthly);
                       const cur = periodValue(acc, period, currency, exchangeRates);
@@ -917,7 +892,7 @@ export default function CostTypeTabs({
                             className="break-words text-gray-600 min-w-0 leading-snug text-[10px] sm:text-[11px] md:text-xs"
                             style={{ paddingLeft: depth * 12 }}
                           >
-                            {shortSubLabel(label)}
+                            {name ?? shortSubLabel(label)}
                           </div>
                           <div className={metricCellClass}>
                             <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">금액</span>
@@ -962,8 +937,37 @@ export default function CostTypeTabs({
                           {withPlanColumns && subPlanCells(subPlanOf(category, label), cur)}
                         </div>
                       );
-                    })}
-                              </div>
+                      };
+
+                      const renderNodes = (nodes: SubNode[], depth: number): React.ReactNode =>
+                        nodes.map((node) => {
+                          // depth 0(IT/지급) 은 항상 펼쳐 중분류까지 먼저 보이게 하고,
+                          // depth 1(중분류) 부터는 눌러야 열린다.
+                          // 단, 첫 가지 아래가 곧바로 잎뿐이면(출장비 › 부서) 접어 둔다 —
+                          // 부서 20여 개가 한꺼번에 펼쳐지면 표가 너무 길다.
+                          const leafOnly = node.children.every(c => c.children.length === 0);
+                          const collapsible =
+                            node.children.length > 0 && (depth >= 1 || leafOnly);
+                          const key = `${category}|${node.leaves[0]}|${depth}`;
+                          const open = !collapsible || deepOpen.has(key);
+                          return (
+                          <div key={key}>
+                            {/* 자식이 있으면 합계 줄, 없으면 상세 줄 */}
+                            {node.children.length > 0 ? (
+                              <>
+                                {branchRow(
+                                  node,
+                                  depth,
+                                  collapsible
+                                    ? { open, onClick: () => toggleDeep(key) }
+                                    : undefined
+                                )}
+                                {open && renderNodes(node.children, depth + 1)}
+                                {/* 중분류까지만 잡히고 소분류 규칙에 안 걸린 금액 — 빼면 자식 합이 가지와 안 맞는다 */}
+                                {open && node.label && leafRow(node.label, depth + 1, '기타 (세부 미분류)')}
+                              </>
+                            ) : (
+                              <div>{leafRow(node.leaves[0], depth)}</div>
                             )}
                           </div>
                           );
