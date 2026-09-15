@@ -151,6 +151,14 @@ export function buildSubTree(labels: string[]): SubNode[] {
   return roots;
 }
 
+/**
+ * 계획서 키와 맞추기 위한 정규화 — 마디마다 접두어를 뗀다.
+ * '여비교통비_국내출장비 › 재무' → '국내출장비 › 재무'
+ */
+export function normalizeSubLabel(label: string): string {
+  return label.split(SUB_LEVEL_SEP).map(shortSubLabel).join(SUB_LEVEL_SEP);
+}
+
 export function shortSubLabel(label: string): string {
   const leaf = leafSubLabel(label);
   for (const prefix of SUB_LABEL_PREFIXES) {

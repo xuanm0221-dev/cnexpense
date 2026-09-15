@@ -31,7 +31,15 @@ import {
 } from '@/utils/formatters';
 import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
 import { fromMonthly, periodCny, periodValue, type Period } from '@/lib/period';
-import { buildSubTree, shortSubLabel, sortSubLabels, type SubNode, type SubLevels } from '@/lib/account-analysis';
+import {
+  buildSubTree,
+  normalizeSubLabel,
+  shortSubLabel,
+  sortSubLabels,
+  type SubNode,
+  type SubLevels,
+} from '@/lib/account-analysis';
+import type { SubPlan } from '@/lib/data-loader';
 
 const SALARY_SUB_LABELS = ['기본급', '성과급', 'Red Pack', '외주/PT', '퇴직급여', '미정'] as const;
 
@@ -201,6 +209,8 @@ interface CostTypeTabsProps {
    * 당월·분기는 연간 계획과 견줄 기간이 아니라 표시하지 않는다.
    */
   annualPlan?: Record<string, number> | null;
+  /** 부서 단계 연간계획 (대분류 → '중분류 › 부서' → 금액). 트리 잎·가지 행에 진척률을 붙인다 */
+  annualSubPlan?: SubPlan | null;
   /** 표시 통화 및 환율 (KRW는 재무식에서만) */
   currency?: Currency;
   exchangeRates?: ExchangeRateData | null;
@@ -231,6 +241,7 @@ export default function CostTypeTabs({
   subLevels,
   estimatedCategories,
   annualPlan,
+  annualSubPlan,
   currency = 'CNY',
   exchangeRates = null,
   period,
@@ -318,6 +329,37 @@ export default function CostTypeTabs({
   /** 진척률 색 — 경과 기준선 초과면 빨강 */
   const progressTone = (progress: number) =>
     progress > elapsedPace ? 'text-red-600 font-medium' : 'text-blue-600';
+
+  /** 하위 구성 라벨(원문)의 연간계획 — 계획서 키는 접두어가 없어 정규화해서 찾는다 */
+  const subPlanOf = (category: string, label: string): number | null => {
+    const v = annualSubPlan?.[category]?.[normalizeSubLabel(label)];
+    return v == null ? null : v;
+  };
+
+  /** 잎·가지 행의 연간계획·진척률 두 칸. 계획이 없으면 '—' */
+  const subPlanCells = (planYear: number | null, amount: number | null) => {
+    const progress = planYear && amount != null ? (amount / planYear) * 100 : null;
+    return (
+      <>
+        <div className={`${metricCellClass} ${PLAN_DIVIDER}`}>
+          <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">연간계획</span>
+          <span className="text-right text-gray-500 tabular-nums">
+            {planYear == null ? <span className="text-gray-300">—</span> : formatAmount(planYear, currency)}
+          </span>
+        </div>
+        <div className={metricCellClass}>
+          <span className="text-[10px] sm:text-xs text-gray-500 md:hidden shrink-0">진척률</span>
+          <div className="text-right">
+            {progress == null ? (
+              <span className="text-gray-300">—</span>
+            ) : (
+              <span className={progressTone(progress)}>{Math.round(progress)}%</span>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  };
 
   const setActiveTab = onTabChange ?? setInternalActiveTab;
 
@@ -750,6 +792,12 @@ export default function CostTypeTabs({
                         }
                         const idx = yoyIndex(sum, prev);
                         const delta = prev === 0 ? null : formatDelta(sum, prev, currency);
+                        // 가지의 계획 = 아래 잎들의 계획 합 (하나라도 있어야 표시)
+                        let branchPlan: number | null = null;
+                        for (const l of node.leaves) {
+                          const v = subPlanOf(category, l);
+                          if (v != null) branchPlan = (branchPlan ?? 0) + v;
+                        }
                         return (
                           <div
                             className={`${rowGridClass} ${
@@ -806,12 +854,7 @@ export default function CostTypeTabs({
                                 )}
                               </div>
                             </div>
-                            {withPlanColumns && (
-                              <>
-                                <div className={`${metricCellClass} ${PLAN_DIVIDER}`} />
-                                <div className={metricCellClass} />
-                              </>
-                            )}
+                            {withPlanColumns && subPlanCells(branchPlan, sum)}
                           </div>
                         );
                       };
@@ -906,6 +949,7 @@ export default function CostTypeTabs({
                               )}
                             </div>
                           </div>
+                          {withPlanColumns && subPlanCells(subPlanOf(category, label), cur)}
                         </div>
                       );
                     })}

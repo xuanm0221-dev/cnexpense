@@ -35,7 +35,7 @@ import {
   yoyIndex,
 } from '@/utils/formatters';
 import type { Currency, ExchangeRateData } from '@/lib/exchange-rates';
-import type { PlanBasis } from '@/lib/data-loader';
+import type { PlanBasis, SubPlan } from '@/lib/data-loader';
 import { CORPORATE_RETAIL_UNIT } from '@/lib/retail-brands';
 import CostTypeTabs from './CostTypeTabs';
 
@@ -70,6 +70,8 @@ interface BusinessUnitCardProps {
   subLevels?: SubLevels;
   /** 연간 계획 (대분류 → 금액) — 관리식 + 누적(YTD) 에서만 표에 표시 */
   annualPlan?: Record<string, number> | null;
+  /** 부서 단계 연간계획 (대분류 → '중분류 › 부서' → 금액) */
+  annualSubPlan?: SubPlan | null;
   /** 연간계획 기준 — 기존 / 조정후(중간점검) */
   planBasis?: PlanBasis;
   onPlanBasisChange?: (b: PlanBasis) => void;
@@ -113,6 +115,7 @@ export default function BusinessUnitCard({
   onTabChange,
   costBasis = '관리식',
   annualPlan,
+  annualSubPlan,
   planBasis = 'base',
   onPlanBasisChange,
   hasAdjustedPlan = false,
@@ -756,6 +759,7 @@ export default function BusinessUnitCard({
           subLevels={subLevels}
           estimatedCategories={estimatedCategories}
           annualPlan={annualPlan}
+          annualSubPlan={annualSubPlan}
           currency={currency}
           exchangeRates={exchangeRates}
           period={period}

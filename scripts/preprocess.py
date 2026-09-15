@@ -89,6 +89,17 @@ PLAN_CATEGORY_MAP = {
     '차량렌트비': '기타',
 }
 
+#: 계획서 부서명 → 코스트센터마스터 부서명. 실적은 마스터 이름으로 묶이므로 여기서 맞춘다.
+#: (오타 'Procument' 포함. '유통MD(MO)' 는 MLB 행에만 있고 마스터의 MLB 쪽 이름이 '유통MD')
+PLAN_DEPT_ALIASES = {
+    'Admin': '총무',
+    'BD': 'Business Development',
+    'Procurement': '구매',
+    'Procument': '구매',
+    '유통MD(MO)': '유통MD',
+    '상품기획(MP)': 'MP(상품기획)',
+}
+
 # 분석 대상 사업부 (마스터 파일과 정확히 일치해야 함)
 TARGET_BUSINESS_UNITS = ["경영지원", "MLB", "MLB KIDS", "Discovery", "Duvetica", "SUPRA"]
 
@@ -3020,7 +3031,7 @@ def preprocess_store_headcount():
         traceback.print_exc()
 
 
-def _plan_unit_of(row):
+def _plan_unit_of(row, dept_units=None):
     """
     계획 행의 사업부.
 
@@ -3031,30 +3042,63 @@ def _plan_unit_of(row):
     sub = str(row.get('소분류', '')).strip()
     if sub in PLAN_UNIT_MAP:
         return PLAN_UNIT_MAP[sub]
-    return PLAN_UNIT_MAP.get(str(row.get('사업부구분', '')).strip())
+    base = PLAN_UNIT_MAP.get(str(row.get('사업부구분', '')).strip())
+
+    # 부서 단계가 있는 대분류(출장비)는 소분류가 부서명이다. 그 부서가 마스터에서
+    # 다른 사업부(경영지원) 한 곳에만 있으면 그리로 보낸다 — 재무·법무·MGT 출장비가
+    # 사업부구분 'MLB' 로 적혀 있어도 실적은 경영지원 코스트센터에 잡힌다.
+    cat = PLAN_CATEGORY_MAP.get(str(row.get('대분류', '')).strip())
+    if dept_units and cat in DEPT_SPLIT_CATEGORIES:
+        owners = dept_units.get(PLAN_DEPT_ALIASES.get(sub, sub))
+        if owners and base not in owners and len(owners) == 1:
+            return next(iter(owners))
+    return base
 
 
-def _read_plan_annual(path, amount_col, num):
+def _plan_sub_key(row):
+    """부서 단계가 있는 대분류의 하위 키 — '국내출장비 › 재무'. 해당 없으면 None."""
+    if PLAN_CATEGORY_MAP.get(str(row.get('대분류', '')).strip()) not in DEPT_SPLIT_CATEGORIES:
+        return None
+    mid = str(row.get('중분류', '')).strip()
+    sub = str(row.get('소분류', '')).strip()
+    if not mid or not sub:
+        return None
+    return f"{mid}{SUB_LEVEL_SEP}{PLAN_DEPT_ALIASES.get(sub, sub)}"
+
+
+def _plan_dept_units():
+    """코스트센터마스터의 부서명 → 그 부서가 속한 사업부 집합 (영업 코스트센터만)."""
+    cc = pd.read_csv(master_path("코스트센터마스터.csv"), encoding='utf-8-sig', dtype=str)
+    cc.columns = cc.columns.str.strip()
+    cc = cc[cc['영업/직접'].fillna('').str.strip() == '영업']
+    out = {}
+    for dept, bu in zip(cc['부서명'].fillna('').str.strip(), cc['사업부'].fillna('').str.strip()):
+        if dept and bu:
+            out.setdefault(dept, set()).add(bu)
+    return out
+
+
+def _read_plan_annual(path, amount_col, num, dept_units=None):
     """
     계획 파일에서 **사업부 × 대분류 연간 금액**만 뽑는다.
 
     조정후 계획(중간점검)처럼 월별 배분 없이 연간만 있는 파일을 읽으려고 분리했다.
     사업부·대분류 이름 대응은 기존 계획과 같은 규칙(PLAN_*_MAP)을 쓴다.
     """
-    annual, totals = {}, {}
+    annual, totals, annual_sub = {}, {}, {}
     if not path.exists():
         print(f"  [건너뜀] {path.name} 없음 — 조정후 계획 미생성")
-        return annual, totals
+        return annual, totals, annual_sub
 
     df = pd.read_csv(path, encoding='utf-8-sig', dtype=str)
     df.columns = [str(c).strip() for c in df.columns]
     col = next((c for c in df.columns if c.strip() == amount_col), None)
     if col is None:
         print(f"  [주의] {path.name} 에 '{amount_col}' 컬럼이 없습니다 — 조정후 계획 미생성")
-        return annual, totals
+        return annual, totals, annual_sub
 
     for _, row in df.iterrows():
-        unit = _plan_unit_of(row)
+        unit = _plan_unit_of(row, dept_units)
         if not unit:
             continue
         amount = num(row.get(col))
@@ -3065,7 +3109,11 @@ def _read_plan_annual(path, amount_col, num):
         if mapped:
             annual.setdefault(unit, {})
             annual[unit][mapped] = annual[unit].get(mapped, 0.0) + amount
-    return annual, totals
+            sub_key = _plan_sub_key(row)
+            if sub_key:
+                d = annual_sub.setdefault(unit, {}).setdefault(mapped, {})
+                d[sub_key] = d.get(sub_key, 0.0) + amount
+    return annual, totals, annual_sub
 
 
 def process_plan():
@@ -3116,12 +3164,15 @@ def process_plan():
     # → 연간계획·사용률은 annual, 계획비(YTD 대비)는 월별을 쓴다.
     annual = {}
     annual_totals = {}
+    # 부서 단계 연간계획 — 사업부 → 대분류 → '중분류 › 부서' (DEPT_SPLIT_CATEGORIES)
+    annual_sub = {}
     unmapped_units, unmapped_cats = set(), set()
+    dept_units = _plan_dept_units()
 
     for _, row in df.iterrows():
         raw_unit = str(row.get('사업부구분', '')).strip()
         raw_cat = str(row.get('대분류', '')).strip()
-        unit = _plan_unit_of(row)
+        unit = _plan_unit_of(row, dept_units)
         if not unit:
             if raw_unit:
                 unmapped_units.add(raw_unit)
@@ -3153,11 +3204,17 @@ def process_plan():
             if mapped:
                 annual.setdefault(unit, {})
                 annual[unit][mapped] = annual[unit].get(mapped, 0.0) + year_amount
+                sub_key = _plan_sub_key(row)
+                if sub_key:
+                    d = annual_sub.setdefault(unit, {}).setdefault(mapped, {})
+                    d[sub_key] = d.get(sub_key, 0.0) + year_amount
 
     # ── 조정후 계획 (중간점검) ──────────────────────────────────────────
     # 식별 컬럼은 기존과 같고 금액만 '조정후 예산' 을 쓴다. 월별 배분은 없어서
     # 연간만 만든다 — 진척률·사용률이 연간 정본만 쓰므로 그것으로 충분하다.
-    annual_adj, annual_adj_totals = _read_plan_annual(PLAN_ADJUSTED_FILE, '조정후 예산', num)
+    annual_adj, annual_adj_totals, annual_adj_sub = _read_plan_annual(
+        PLAN_ADJUSTED_FILE, '조정후 예산', num, dept_units
+    )
 
     months = sorted({ym for ymap in totals.values() for ym in ymap})
     result = {
@@ -3180,6 +3237,15 @@ def process_plan():
         # 기중 조정 계획 — 화면의 '조정후 계획' 탭이 쓴다. 없으면 빈 객체.
         "annualAdjusted": {u: {c: round(v) for c, v in cats.items()} for u, cats in annual_adj.items()},
         "annualAdjustedTotal": {u: round(v) for u, v in annual_adj_totals.items()},
+        # 부서 단계 연간계획 (출장비 › 국내/해외 › 부서). 화면 트리의 잎·가지 행 진척률에 쓴다
+        "annualSub": {
+            u: {c: {k: round(v) for k, v in subs.items()} for c, subs in cats.items()}
+            for u, cats in annual_sub.items()
+        },
+        "annualAdjustedSub": {
+            u: {c: {k: round(v) for k, v in subs.items()} for c, subs in cats.items()}
+            for u, cats in annual_adj_sub.items()
+        },
     }
 
     for u in sorted(totals):
@@ -3187,6 +3253,9 @@ def process_plan():
         year_sum = annual_totals.get(u, 0)
         gap = "" if abs(year_sum - monthly_sum) < 1 else f" (월별 합 {monthly_sum/1e6:,.1f}백만 — 배분 차이)"
         print(f"  - {u}: 대분류 {len(data.get(u, {}))}종 / 연간 {year_sum/1e6:,.1f}백만{gap}")
+    n_sub = sum(len(subs) for cats in annual_sub.values() for subs in cats.values())
+    if n_sub:
+        print(f"  - 부서 단계 계획: {', '.join(DEPT_SPLIT_CATEGORIES)} {n_sub}행")
     if annual_adj_totals:
         base = sum(annual_totals.values())
         adj = sum(annual_adj_totals.values())

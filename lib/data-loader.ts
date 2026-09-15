@@ -217,6 +217,33 @@ export function toRetailSalesData(
   return Object.keys(out).length > 0 ? out : null;
 }
 
+/**
+ * 선택 사업부의 부서 단계 연간계획. 법인이면 사업부를 전부 합친다.
+ * 트리의 잎(부서)·가지(국내/해외) 행에 연간계획·진척률을 붙일 때 쓴다.
+ */
+export function annualSubPlanFor(
+  plan: PlanData | null,
+  unit: string,
+  corporateUnits: readonly string[],
+  basis: PlanBasis = 'base'
+): SubPlan | null {
+  if (!plan) return null;
+  const source =
+    basis === 'adjusted' && Object.keys(plan.annualAdjustedSub ?? {}).length > 0
+      ? plan.annualAdjustedSub!
+      : plan.annualSub;
+  if (!source) return null;
+  const units = corporateUnits.includes(unit) ? [unit] : Object.keys(source);
+  const out: SubPlan = {};
+  for (const u of units) {
+    for (const [category, subs] of Object.entries(source[u] ?? {})) {
+      const bucket = (out[category] ??= {});
+      for (const [key, v] of Object.entries(subs)) bucket[key] = (bucket[key] ?? 0) + v;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 /** 해당 사업부의 채널 분해 (직영 ON/OFF · 대리상 ON/OFF · 미지정) */
 export function retailChannelsFor(
   response: RetailSalesResponse | null,
@@ -254,7 +281,16 @@ export interface PlanData {
   /** 기중 조정 계획(중간점검). 파일이 없으면 비어 있다 */
   annualAdjusted?: Record<string, Record<string, number>>;
   annualAdjustedTotal?: Record<string, number>;
+  /**
+   * 부서 단계 연간계획 — 사업부 → 대분류 → '중분류 › 부서' (출장비 등).
+   * 키는 계획서 표기라 실적 라벨은 normalizeSubLabel 로 맞춰 찾는다.
+   */
+  annualSub?: Record<string, Record<string, Record<string, number>>>;
+  annualAdjustedSub?: Record<string, Record<string, Record<string, number>>>;
 }
+
+/** 대분류 → '중분류 › 부서' → 연간계획 */
+export type SubPlan = Record<string, Record<string, number>>;
 
 /** 연간계획을 기존/조정후 중 무엇으로 볼지 */
 export type PlanBasis = 'base' | 'adjusted';

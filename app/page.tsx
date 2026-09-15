@@ -70,6 +70,7 @@ import {
   selectableMonths,
   loadPlanData,
   annualPlanFor,
+  annualSubPlanFor,
   hasAdjustedPlan,
   type PlanData,
   type PlanBasis,
@@ -209,6 +210,12 @@ export default function HomePage() {
   useEffect(() => {
     if (!planBasisActive && planBasis !== 'base') setPlanBasis('base');
   }, [planBasisActive, planBasis]);
+
+  /** 부서 단계 연간계획 (대분류 → '중분류 › 부서' → 금액). 트리 잎·가지 행용 */
+  const annualSubPlan = useMemo(
+    () => annualSubPlanFor(planData, selectedUnit, CORPORATE_BUSINESS_UNIT_IDS, planBasis),
+    [planData, selectedUnit, planBasis]
+  );
 
   /** 선택 사업부의 연간 계획 (대분류 → 금액). 카드 표의 `연간계획·진척률` 컬럼용 */
   const annualPlan = useMemo(() => {
@@ -704,6 +711,7 @@ export default function HomePage() {
                 subLevels={subLevels}
                 estimatedCategories={estimatedCategories}
                 annualPlan={annualPlan}
+                annualSubPlan={annualSubPlan}
                 planBasis={planBasis}
                 onPlanBasisChange={setPlanBasis}
                 hasAdjustedPlan={hasAdjustedPlan(planData)}
